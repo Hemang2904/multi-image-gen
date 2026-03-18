@@ -299,7 +299,7 @@ def fal_edit(fal_key, source_url, prompt):
     os.environ["FAL_KEY"] = fal_key
     result = fal_client.subscribe("fal-ai/flux-2/turbo/edit", arguments={
         "image_urls": [source_url], "prompt": prompt,
-        "num_images": 1, "num_inference_steps": 6, "guidance_scale": 25,
+        "num_images": 1, "num_inference_steps": 6, "guidance_scale": 15,
     })
     if isinstance(result, dict):
         images = result.get("images", [])
