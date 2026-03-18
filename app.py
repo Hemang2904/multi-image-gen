@@ -5,10 +5,10 @@ Uses ONLY Fal.ai (single API key):
   - Florence-2 Large → image captioning + type detection
   - Flux 2 Turbo Edit → single-component image editing
 
-Stone color changes are separate:
-  - "Main stone color" only affects the center stone
-  - "Side stone color" only affects the side/accent stones
-  - Neither randomly adds stones or colors to the other
+Stone options:
+  - Main stone = actual gemstones (ruby, emerald, sapphire etc.)
+  - Side stones = matching gemstones
+  - Combo = same gemstone for both main + side (industry standard)
 
 RUN:
   pip install streamlit fal-client Pillow requests
@@ -83,6 +83,44 @@ st.markdown("""
 
 
 # ============================================================================
+# GEMSTONE LISTS — proper industry names, no color descriptions
+# ============================================================================
+
+# Main/center stone gemstones
+MAIN_GEMSTONES = [
+    "diamond", "ruby", "blue sapphire", "emerald", "amethyst",
+    "topaz", "aquamarine", "morganite", "tanzanite", "garnet",
+    "citrine", "peridot", "opal", "black onyx", "alexandrite",
+]
+
+# Side/accent stone gemstones
+SIDE_GEMSTONES = [
+    "diamond", "ruby", "blue sapphire", "emerald", "pink sapphire",
+    "black diamond", "yellow diamond", "champagne diamond",
+    "tsavorite", "amethyst",
+]
+
+# Industry combos — main + side together (how real jewelry is designed)
+STONE_COMBOS = [
+    {"label": "Ruby + Diamond accents",             "main": "ruby",           "side": "diamond"},
+    {"label": "Blue Sapphire + Diamond accents",    "main": "blue sapphire",  "side": "diamond"},
+    {"label": "Emerald + Diamond accents",          "main": "emerald",        "side": "diamond"},
+    {"label": "Diamond + Ruby accents",             "main": "diamond",        "side": "ruby"},
+    {"label": "Diamond + Blue Sapphire accents",    "main": "diamond",        "side": "blue sapphire"},
+    {"label": "Diamond + Emerald accents",          "main": "diamond",        "side": "emerald"},
+    {"label": "Diamond + Pink Sapphire accents",    "main": "diamond",        "side": "pink sapphire"},
+    {"label": "Diamond + Black Diamond accents",    "main": "diamond",        "side": "black diamond"},
+    {"label": "Tanzanite + Diamond accents",        "main": "tanzanite",      "side": "diamond"},
+    {"label": "Morganite + Diamond accents",        "main": "morganite",      "side": "diamond"},
+    {"label": "Ruby + Ruby accents (all ruby)",     "main": "ruby",           "side": "ruby"},
+    {"label": "Sapphire + Sapphire accents (all)",  "main": "blue sapphire",  "side": "blue sapphire"},
+    {"label": "Emerald + Emerald accents (all)",    "main": "emerald",        "side": "emerald"},
+    {"label": "Amethyst + Diamond accents",         "main": "amethyst",       "side": "diamond"},
+    {"label": "Aquamarine + Diamond accents",       "main": "aquamarine",     "side": "diamond"},
+]
+
+
+# ============================================================================
 # PARAMS
 # ============================================================================
 MIN_PARAMS_RULES = {5: 1, 10: 1, 20: 2, 30: 2, 40: 3, 50: 4}
@@ -94,33 +132,18 @@ def get_min_params(n):
 TYPE_ICONS = {"ring": "💍", "pendant": "📿", "earring": "✨", "bangle": "⭕", "necklace": "📿", "bracelet": "⛓️", "statue": "🗿"}
 VALID_TYPES = ["ring", "pendant", "earring", "bangle", "necklace", "bracelet", "statue"]
 
-# Gemstone colors for main/center stones
-MAIN_STONE_COLORS = [
-    "diamond (colorless)", "ruby (red)", "blue sapphire", "emerald (green)",
-    "amethyst (purple)", "yellow topaz", "aquamarine (light blue)",
-    "morganite (pink)", "tanzanite (violet-blue)", "garnet (deep red)",
-    "citrine (golden yellow)", "peridot (green)", "opal (iridescent)",
-    "black onyx", "white pearl",
-]
-
-# Colors for side/accent stones
-SIDE_STONE_COLORS = [
-    "diamond (colorless)", "ruby (red)", "blue sapphire", "emerald (green)",
-    "pink sapphire", "black diamond", "yellow diamond", "champagne diamond",
-    "tsavorite (green)", "amethyst (purple)",
-]
-
 ESSENTIAL_PARAMS = {
     "ring": {
         "shank_style":      {"label": "Shank style",       "values": ["knife-edge","tapered","comfort-fit rounded","flat band","euro-shank","split-shank","twisted rope","bypass-swirl","open lattice","cathedral shank","double-rail","scalloped gallery shank","architectural ribbed","bamboo textured","braided wire"]},
         "head_type":        {"label": "Head type",          "values": ["basket mount","cathedral","bezel frame","low-profile flush","crown head","suspended crown","tension bridge","geometric frame","double halo head","raised pedestal","lotus head","trellis/lattice head","compass prong head","split-claw head"]},
         "setting_type":     {"label": "Stone setting",      "values": ["4-prong claw","6-prong claw","full bezel","half bezel","tension set","channel set","micro pave","bar set","gypsy/flush set","invisible set","cathedral bezel","collet set"]},
         "stone_shape":      {"label": "Main stone shape",   "values": ["round brilliant","princess cut","oval","emerald cut","cushion","pear"]},
-        "stone_color":      {"label": "Main stone color",   "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Main stone only",    "values": MAIN_GEMSTONES},
+        "side_stone_style": {"label": "Side stone style",   "values": ["none","pave band","channel-set baguettes","bezel-set rounds"]},
+        "side_stone_color": {"label": "Side stone only",    "values": SIDE_GEMSTONES},
+        "stone_combo":      {"label": "Main + Side combo",  "values": [c["label"] for c in STONE_COMBOS]},
         "metal_type":       {"label": "Metal type",         "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","14K yellow gold","sterling silver"]},
         "metal_finish":     {"label": "Metal finish",       "values": ["high polish","brushed matte","satin","hammered"]},
-        "side_stone_style": {"label": "Side stone style",   "values": ["none","pave band","channel-set baguettes","bezel-set rounds"]},
-        "side_stone_color": {"label": "Side stone color",   "values": SIDE_STONE_COLORS},
         "shoulder_style":   {"label": "Shoulder style",     "values": ["plain","pave-set","tapered baguette","milgrain edged"]},
         "gallery_style":    {"label": "Gallery",            "values": ["open gallery","closed gallery","filigree gallery","hidden halo gallery","pierced gallery","scroll gallery","lattice gallery","crown gallery"]},
         "edge_finish":      {"label": "Edge finish",        "values": ["plain","milgrain","rope edge","knife edge"]},
@@ -131,7 +154,8 @@ ESSENTIAL_PARAMS = {
         "bail_type":        {"label": "Bail type",          "values": ["fixed bail","hidden bail","tube bail","diamond-set bail","split bail","rabbit ear bail","enhancer clip bail","hinged bail","omega bail","double loop bail"]},
         "setting_type":     {"label": "Stone setting",      "values": ["prong set","bezel set","tension set","pave set","flush set"]},
         "stone_shape":      {"label": "Main stone shape",   "values": ["round brilliant","oval","emerald cut","cushion","pear","cabochon"]},
-        "stone_color":      {"label": "Main stone color",   "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Main stone only",    "values": MAIN_GEMSTONES},
+        "stone_combo":      {"label": "Main + Side combo",  "values": [c["label"] for c in STONE_COMBOS]},
         "metal_type":       {"label": "Metal type",         "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
         "metal_finish":     {"label": "Metal finish",       "values": ["high polish","brushed matte","satin","hammered"]},
         "border_detail":    {"label": "Border detail",      "values": ["none","milgrain border","rope border","scalloped edge"]},
@@ -145,7 +169,8 @@ ESSENTIAL_PARAMS = {
         "frame_style":      {"label": "Frame style",        "values": ["open","closed","filigree","wire wrap","sculpted solid","cage/lantern","lattice","halo surround","art deco geometric","floating/tension"]},
         "setting_type":     {"label": "Stone setting",      "values": ["prong set","bezel set","channel set","pave set","flush set"]},
         "stone_shape":      {"label": "Main stone shape",   "values": ["round brilliant","princess cut","oval","cushion","pear"]},
-        "stone_color":      {"label": "Main stone color",   "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Main stone only",    "values": MAIN_GEMSTONES},
+        "stone_combo":      {"label": "Main + Side combo",  "values": [c["label"] for c in STONE_COMBOS]},
         "metal_type":       {"label": "Metal type",         "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
         "metal_finish":     {"label": "Metal finish",       "values": ["high polish","brushed matte","satin","hammered"]},
         "drop_length":      {"label": "Drop length",        "values": ["flush to ear (stud)","short drop (1-2cm)","medium drop (3-4cm)","long drop (5-7cm)"]},
@@ -161,7 +186,7 @@ ESSENTIAL_PARAMS = {
         "surface_pattern":  {"label": "Surface pattern",    "values": ["none/plain","hammered texture","diamond-cut facets","twisted cable","woven/braided","bark texture","geometric etched","brushed linear","granulation","filigree overlay","herringbone"]},
         "edge_treatment":   {"label": "Edge treatment",     "values": ["plain smooth","milgrain","rope border","scalloped"]},
         "stone_arrangement":{"label": "Stones",             "values": ["none","single center stone","half-way set","station-set evenly spaced"]},
-        "stone_color":      {"label": "Stone color",        "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Stone gemstone",     "values": MAIN_GEMSTONES},
         "motif":            {"label": "Motif",              "values": ["none","floral","celestial","geometric"]},
     },
     "necklace": {
@@ -172,7 +197,7 @@ ESSENTIAL_PARAMS = {
         "metal_type":       {"label": "Metal type",         "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
         "metal_finish":     {"label": "Metal finish",       "values": ["high polish","brushed matte","satin","diamond-cut faceted"]},
         "clasp_type":       {"label": "Clasp type",         "values": ["lobster claw","spring ring","toggle","box clasp","magnetic"]},
-        "stone_color":      {"label": "Stone color",        "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Stone gemstone",     "values": MAIN_GEMSTONES},
         "surface_texture":  {"label": "Surface texture",    "values": ["smooth","hammered links","twisted links","diamond-cut facets"]},
         "chain_thickness":  {"label": "Thickness",          "values": ["delicate (0.5-1mm)","thin (1-1.5mm)","medium (2-3mm)","thick (4-5mm)"]},
         "motif":            {"label": "Motif",              "values": ["none","floral","celestial","geometric","infinity"]},
@@ -186,7 +211,7 @@ ESSENTIAL_PARAMS = {
         "surface_texture":  {"label": "Surface texture",    "values": ["smooth","hammered","twisted cable","braided","diamond-cut","bark texture","granulated","brushed linear","woven mesh","filigree overlay","satin matte","sandblasted"]},
         "band_width":       {"label": "Band width",         "values": ["delicate (1-2mm)","thin (3-4mm)","medium (5-7mm)","wide (8-12mm)"]},
         "stone_arrangement":{"label": "Stones",             "values": ["none","single center","half-way around","full eternity","station-set spaced"]},
-        "stone_color":      {"label": "Stone color",        "values": MAIN_STONE_COLORS},
+        "stone_color":      {"label": "Stone gemstone",     "values": MAIN_GEMSTONES},
         "edge_treatment":   {"label": "Edge treatment",     "values": ["plain","milgrain","rope border","scalloped"]},
         "motif":            {"label": "Motif",              "values": ["none","floral","geometric","celestial"]},
     },
@@ -206,80 +231,89 @@ ESSENTIAL_PARAMS = {
 
 
 # ============================================================================
-# SMART PROMPT BUILDER — different prompts for different param types
+# SMART PROMPT BUILDER
 # ============================================================================
 
 def build_edit_prompt(jewelry_type, param, new_value):
-    """
-    Build a precise edit prompt. Stone-related params get special handling
-    to avoid randomly adding/changing the wrong stones.
-    """
+    """Build precise edit prompt. Stone params get special isolation prompts."""
 
-    # --- MAIN STONE COLOR: only touch the center stone ---
+    # --- MAIN STONE GEMSTONE: completely replace the center stone ---
     if param == "stone_color":
         return (
-            f"Edit this {jewelry_type} image: change ONLY the center/main stone "
-            f"to a {new_value}. Replace the existing center stone with a {new_value} stone. "
-            f"Do NOT touch the side stones, accent stones, or any other stones. "
-            f"Keep the side stones exactly as they are. "
-            f"Keep everything else identical — same metal, same setting, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Edit this {jewelry_type}: completely remove the existing center stone "
+            f"and replace it with a natural {new_value} gemstone in the exact same position and size. "
+            f"The {new_value} must sit naturally inside the existing setting, not on top of it. "
+            f"Do NOT touch the side stones or accent stones — keep them exactly as they are. "
+            f"Keep the same metal, setting style, angle, lighting, background, and proportions."
         )
 
-    # --- SIDE STONE COLOR: only touch the side/accent stones ---
+    # --- SIDE STONE GEMSTONE: only replace side/accent stones ---
     if param == "side_stone_color":
         return (
-            f"Edit this {jewelry_type} image: change ONLY the side stones and accent stones "
-            f"to {new_value}. Replace all small side/accent stones with {new_value} stones. "
-            f"Do NOT touch the center/main stone at all. "
-            f"Keep the center stone exactly as it is. "
-            f"Keep everything else identical — same metal, same setting, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Edit this {jewelry_type}: completely remove the existing side stones and accent stones "
+            f"and replace them all with {new_value} gemstones in the exact same positions and sizes. "
+            f"The {new_value} stones must sit naturally inside their existing settings, not stacked on top. "
+            f"Do NOT touch the center/main stone at all — keep it exactly as it is. "
+            f"Keep the same metal, angle, lighting, background, and proportions."
         )
 
-    # --- MAIN STONE SHAPE: only change the center stone shape ---
+    # --- STONE COMBO: replace BOTH main and side stones together ---
+    if param == "stone_combo":
+        combo = None
+        for c in STONE_COMBOS:
+            if c["label"] == new_value:
+                combo = c
+                break
+        if combo:
+            return (
+                f"Edit this {jewelry_type}: completely remove ALL existing stones. "
+                f"Replace the center/main stone with a natural {combo['main']} gemstone "
+                f"and replace all side/accent stones with {combo['side']} gemstones. "
+                f"All stones must sit naturally inside their existing settings, not stacked on top. "
+                f"Remove the old stones first, then place the new ones in the same positions and sizes. "
+                f"Keep the same metal, setting style, angle, lighting, background, and proportions."
+            )
+
+    # --- MAIN STONE SHAPE: replace the center stone shape ---
     if param == "stone_shape":
         return (
-            f"Edit this {jewelry_type} image: replace the center/main stone shape "
-            f"with a {new_value} stone. Remove the existing center stone and replace it "
-            f"with a {new_value} cut stone in the same position. "
-            f"Do NOT touch the side stones or accent stones. Keep them exactly as they are. "
-            f"Keep everything else identical — same metal, same setting style, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Edit this {jewelry_type}: completely remove the existing center stone "
+            f"and replace it with a {new_value} cut gemstone that fits naturally inside the existing setting. "
+            f"The new stone must sit inside the setting, not on top of the old stone. "
+            f"Do NOT touch the side stones or accent stones — keep them exactly as they are. "
+            f"Keep the same metal, stone color, angle, lighting, background, and proportions."
         )
 
-    # --- SIDE STONE STYLE: only change the side stones ---
+    # --- SIDE STONE STYLE: change the side stone arrangement ---
     if param == "side_stone_style":
         return (
-            f"Edit this {jewelry_type} image: change ONLY the side stones to {new_value}. "
-            f"Replace the existing side stone arrangement with {new_value}. "
-            f"Do NOT touch the center/main stone at all. Keep it exactly as it is. "
-            f"Keep everything else identical — same metal, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Edit this {jewelry_type}: completely remove the existing side stones "
+            f"and replace them with a {new_value} arrangement. "
+            f"The new side stones must sit naturally in the band, not stacked on top. "
+            f"Do NOT touch the center/main stone at all — keep it exactly as it is. "
+            f"Keep the same metal, angle, lighting, background, and proportions."
         )
 
-    # --- SETTING TYPE: change how the stone is held, not the stone itself ---
+    # --- SETTING TYPE: change how stones are held ---
     if param == "setting_type":
         return (
-            f"Edit this {jewelry_type} image: change the stone setting/mount to a {new_value}. "
-            f"Replace the way the stones are held with a {new_value} setting. "
-            f"Keep the same stones, same stone colors, and same stone shapes. "
-            f"Only change how they are mounted. "
-            f"Keep everything else identical — same metal, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Edit this {jewelry_type}: change the stone setting/mount to a {new_value}. "
+            f"Replace how the stones are held with a {new_value} setting. "
+            f"Keep the exact same stones, gemstone types, and gemstone colors. "
+            f"Only change how they are mounted in the metal. "
+            f"Keep the same metal, angle, lighting, background, and proportions."
         )
 
     # --- STONE ARRANGEMENT (bangle/bracelet/necklace) ---
     if param == "stone_arrangement":
         return (
-            f"Edit this {jewelry_type} image: change the stone arrangement to {new_value}. "
+            f"Edit this {jewelry_type}: change the stone arrangement to {new_value}. "
             f"Replace the existing stone layout with a {new_value} arrangement. "
-            f"Keep the same stone type and colors. Only change how they are distributed. "
-            f"Keep everything else identical — same metal, same angle, "
-            f"same lighting, same background, same proportions."
+            f"Keep the same gemstone type and colors. Only change how they are distributed. "
+            f"Keep the same metal, angle, lighting, background, and proportions."
         )
 
-    # --- ALL OTHER PARAMS: general edit prompt ---
+    # --- ALL OTHER PARAMS ---
     component_names = {
         "shank_style": "shank", "head_type": "head/crown",
         "metal_type": "metal", "metal_finish": "metal finish/surface",
@@ -305,11 +339,11 @@ def build_edit_prompt(jewelry_type, param, new_value):
     component = component_names.get(param, param.replace("_", " "))
 
     return (
-        f"Edit this {jewelry_type} image: replace the existing {component} "
+        f"Edit this {jewelry_type}: replace the existing {component} "
         f"with a {new_value}. Remove the original {component} completely and "
         f"replace it with the new {new_value} version. "
         f"Do not add anything on top of the existing design. "
-        f"Do not stack or layer elements. Do not change any stones or stone colors. "
+        f"Do not stack or layer elements. Do not change any stones, gemstones, or stone colors. "
         f"The result should look like the {jewelry_type} was always made with "
         f"a {new_value} {component}. "
         f"Keep everything else identical — same angle, lighting, background, "
@@ -384,7 +418,6 @@ def generate_variations(jtype, selected, num):
 # ============================================================================
 
 def main():
-    # ---- SIDEBAR ----
     with st.sidebar:
         st.markdown("## 🔑 Fal.ai API Key")
         st.markdown("One key for everything.")
@@ -400,10 +433,11 @@ def main():
         st.markdown("3. Tick what to vary")
         st.markdown("4. Generate 5–50 edit variations")
         st.divider()
-        st.markdown("**Stone controls:**")
-        st.markdown("🔷 Main stone color → only center stone")
-        st.markdown("🔹 Side stone color → only side stones")
-        st.markdown("Neither will randomly add stones")
+        st.markdown("**💎 Stone controls:**")
+        st.markdown("🔷 **Main stone** → only center gemstone")
+        st.markdown("🔹 **Side stone** → only accent gemstones")
+        st.markdown("💠 **Combo** → both main + side together")
+        st.markdown("(industry-standard pairings)")
         st.divider()
         st.markdown("**Min params required:**")
         st.markdown("5-10 imgs → 1 param")
@@ -411,21 +445,17 @@ def main():
         st.markdown("40 imgs → 3 params")
         st.markdown("50 imgs → 4 params")
 
-    # ---- HEADER ----
     st.markdown(
         '<div class="main-header">'
         '<h1>💎 JewelBench — Bulk Variation Generator</h1>'
         '<p>Upload → detect → select → generate precise single-edit variations — all via Fal.ai</p>'
         '</div>', unsafe_allow_html=True)
 
-    # ---- SESSION STATE ----
     for k, d in [("analysis", None), ("source_bytes", None), ("fal_url", None), ("generated", [])]:
         if k not in st.session_state:
             st.session_state[k] = d
 
-    # ================================================================
     # STEP 1
-    # ================================================================
     st.markdown('<p class="section-title">Step 1 — Upload source image</p>', unsafe_allow_html=True)
     st.markdown('<p class="section-sub">Upload a jewelry photo. Florence-2 will detect the type.</p>', unsafe_allow_html=True)
 
@@ -465,16 +495,13 @@ def main():
 
         st.rerun()
 
-    # ================================================================
     # STEP 2
-    # ================================================================
     if st.session_state.analysis:
         analysis = st.session_state.analysis
         auto_type = analysis["type"]
         caption = analysis.get("caption", "")
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
-
         st.markdown(
             f'<div class="detect-box">'
             f'<div class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</div>'
@@ -483,9 +510,7 @@ def main():
 
         st.markdown("**Confirm or change the detected type:**")
         jtype = st.selectbox(
-            label="Jewelry type",
-            options=VALID_TYPES,
-            index=VALID_TYPES.index(auto_type),
+            label="Jewelry type", options=VALID_TYPES, index=VALID_TYPES.index(auto_type),
             format_func=lambda x: f"{TYPE_ICONS.get(x, '💎')} {x.capitalize()}",
         )
 
@@ -493,7 +518,7 @@ def main():
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Step 2 — Select what to change</p>', unsafe_allow_html=True)
-        st.markdown('<p class="section-sub">Tick components to vary. Stone options are separated — main stone and side stones are independent.</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-sub">Tick components to vary. Stone options are independent — main, side, or combo.</p>', unsafe_allow_html=True)
 
         pnames = list(essential.keys())
         half = (len(pnames) + 1) // 2
@@ -504,11 +529,12 @@ def main():
             meta = essential[pn]
             col = c1 if i < half else c2
             with col:
-                # Add emoji indicators for stone params
                 if pn == "stone_color":
-                    lbl = f"🔷 {meta['label']}  ({len(meta['values'])} options)"
+                    lbl = f"🔷 {meta['label']}  ({len(meta['values'])} gemstones)"
                 elif pn == "side_stone_color":
-                    lbl = f"🔹 {meta['label']}  ({len(meta['values'])} options)"
+                    lbl = f"🔹 {meta['label']}  ({len(meta['values'])} gemstones)"
+                elif pn == "stone_combo":
+                    lbl = f"💠 {meta['label']}  ({len(meta['values'])} combos)"
                 elif pn in ("stone_shape", "side_stone_style", "setting_type", "stone_arrangement"):
                     lbl = f"💎 {meta['label']}  ({len(meta['values'])} options)"
                 else:
@@ -518,9 +544,7 @@ def main():
                 if checked:
                     selected.append(pn)
 
-        # ============================================================
         # STEP 3
-        # ============================================================
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Step 3 — Generate variations</p>', unsafe_allow_html=True)
 
@@ -572,9 +596,7 @@ def main():
             st.session_state.generated = gen
             st.success(f"✅ Generated {len(gen)}/{len(variations)} images")
 
-    # ================================================================
-    # STEP 4: Results
-    # ================================================================
+    # STEP 4
     if st.session_state.generated:
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Results</p>', unsafe_allow_html=True)
