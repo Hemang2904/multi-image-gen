@@ -102,14 +102,18 @@ STONE_CATEGORIES = {
 }
 
 # ============================================================================
-# UNIVERSAL STYLE VALUES — same for all 7 types
+# STYLE VALUES — 9 curated styles
 # ============================================================================
 UNIVERSAL_STYLES = [
-    "vintage","modern","floral","art deco","minimalist","edgy","symbolic",
-    "classic/traditional","bohemian","Victorian","contemporary geometric",
-    "nature-inspired","Neo-Heritage Vintage","Pastel Era Floral",
-    "Indo-Western Art Deco","East-West Minimalist","Navratna Modern Classic",
+    "Neo-Heritage Vintage",
+    "Pastel Era Floral",
+    "Indo-Western Art Deco",
+    "East-West Minimalist",
+    "Contemporary Geometric",
+    "Navratna Modern Classic",
     "Nature-Inspired Modern",
+    "Minimalist",
+    "Classic",
 ]
 
 # ============================================================================
@@ -277,11 +281,14 @@ def build_nonstone_prompt(jewelry_type, param, new_value):
 
     if param == "style":
         return (
-            f"Edit this {jewelry_type}: transform the overall design style to a {new_value} aesthetic. "
-            f"Reimagine the {jewelry_type} as if it was originally designed in a {new_value} style — "
-            f"adjust the metalwork patterns, decorative elements, and overall silhouette to match {new_value} design language. "
-            f"Keep the same stones, stone colors, stone count, stone positions, metal type, and metal color. "
-            f"Keep the same basic form factor and proportions of the {jewelry_type}. "
+            f"Edit this {jewelry_type}: transform the metalwork and design language to a {new_value} aesthetic. "
+            f"Only modify the metal surfaces, metal patterns, metal textures, engravings, filigree, and ornamental metalwork. "
+            f"Reimagine the metalwork as if a {new_value} craftsman designed it. "
+            f"Do NOT add any new colored gemstones. Do NOT change existing stone colors. "
+            f"Do NOT replace diamonds with colored stones or colored stones with diamonds. "
+            f"If the original has diamonds, keep diamonds. If the original has colored stones, keep the same colored stones. "
+            f"Stone arrangement may be adjusted to suit the {new_value} style, but use only the same stone types already present. "
+            f"Keep the same metal color (gold stays gold, silver stays silver). "
             f"Same angle, lighting, and background."
         )
 
@@ -333,6 +340,9 @@ def main():
         st.markdown("**Colored:** Main · Side · Accent")
         st.markdown("Each varies: setting, shape, style, prong")
         st.markdown("Colored also: gemstone type")
+        st.divider()
+        st.markdown("## 🎨 Style = Metalwork")
+        st.markdown("Style changes only affect metal patterns, textures, and ornamentation. Stones stay exactly as they are.")
         st.divider()
         st.markdown("Florence-2 detects stone counts → preserved in edits")
 
@@ -408,7 +418,8 @@ def main():
         st.markdown('<p class="section-title">Step 3 — Generate</p>', unsafe_allow_html=True)
         total = len(sel_ns) + len(sel_st)
         gc1, gc2 = st.columns([1, 2])
-        with gc1: num = st.select_slider(label="Number of images", options=[5,10,15,20,25,30,35,40,45,50], value=10)
+        with gc1:
+            num = st.number_input(label="Number of images", min_value=5, max_value=50, value=10, step=1)
         with gc2:
             mn = get_min_params(num)
             if total < mn: st.warning(f"Select at least {mn} param(s) for {num} images. You have {total}.")
