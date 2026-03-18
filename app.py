@@ -1,11 +1,16 @@
 """
 JewelBench — Bulk Jewelry Variation Generator (Streamlit)
 ==========================================================
-Edit-based approach: "In the provided image, change the X to Y. Do not change anything else."
-Single Fal.ai API key works for all models.
+Uses ONLY Fal.ai (single API key):
+  - Florence-2 Large → image captioning + type detection
+  - Flux 2 Turbo Edit → single-component image editing
+
+Edit prompt style:
+  "In the provided image of a ring, change the shank from knife-edge
+   to split-shank. Do not change anything else in the image."
 
 RUN:
-  pip install streamlit fal-client openai Pillow requests
+  pip install streamlit fal-client Pillow requests
   streamlit run jewelbench_streamlit.py
 """
 
@@ -15,6 +20,7 @@ import json
 import random
 import base64
 import time
+import re
 import requests
 from typing import Dict, List, Optional
 
@@ -43,12 +49,11 @@ st.markdown("""
     .section-title { font-size: 18px; font-weight: 600; color: #1B3A5C; margin: 0 0 4px 0; }
     .section-sub { font-size: 13px; color: #64748B; margin: 0 0 16px 0; }
 
-    .param-current { display: inline-block; background: #F1F5F9; color: #475569; padding: 2px 10px; border-radius: 6px; font-size: 12px; }
-    .param-count { display: inline-block; background: #DBEAFE; color: #1E40AF; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-left: 4px; }
+    .param-count { display: inline-block; background: #DBEAFE; color: #1E40AF; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
 
     .detect-box { background: #F0F7FF; border: 2px solid #2E75B6; border-radius: 12px; padding: 20px 24px; margin: 16px 0; }
-    .detect-type { font-size: 24px; font-weight: 700; color: #1B3A5C; text-transform: capitalize; }
-    .detect-sub { font-size: 14px; color: #64748B; }
+    .detect-type { font-size: 22px; font-weight: 700; color: #1B3A5C; text-transform: capitalize; }
+    .detect-sub { font-size: 13px; color: #64748B; margin-top: 6px; line-height: 1.5; }
 
     .card-success { background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 14px 20px; margin-bottom: 12px; }
     .blue-divider { height: 3px; background: linear-gradient(90deg, #2E75B6, transparent); border: none; border-radius: 2px; margin: 24px 0; }
@@ -61,10 +66,10 @@ st.markdown("""
     .var-change { font-size: 11px; color: #2E75B6; font-weight: 600; }
     .var-label { font-size: 11px; color: #64748B; }
 
+    .prompt-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #475569; font-family: monospace; margin: 4px 0 12px 0; line-height: 1.5; }
+
     .stProgress > div > div > div > div { background-color: #2E75B6; }
     #MainMenu, footer, header { visibility: hidden; }
-
-    .prompt-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #475569; font-family: monospace; margin: 4px 0 8px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -79,6 +84,7 @@ def get_min_params(n):
     return 1
 
 TYPE_ICONS = {"ring": "💍", "pendant": "📿", "earring": "✨", "bangle": "⭕", "necklace": "📿", "bracelet": "⛓️", "statue": "🗿"}
+VALID_TYPES = ["ring", "pendant", "earring", "bangle", "necklace", "bracelet", "statue"]
 
 ESSENTIAL_PARAMS = {
     "ring": {
@@ -167,7 +173,6 @@ ESSENTIAL_PARAMS = {
     },
 }
 
-# Human-readable component names for edit prompts
 COMPONENT_NAMES = {
     "shank_style": "shank", "head_type": "head/crown", "setting_type": "stone setting",
     "stone_shape": "center stone shape", "metal_type": "metal", "metal_finish": "metal finish/surface",
@@ -181,7 +186,6 @@ COMPONENT_NAMES = {
     "necklace_type": "necklace style", "chain_style": "chain link style", "pendant_element": "pendant element",
     "link_shape": "link shape", "clasp_type": "clasp", "surface_texture": "surface texture",
     "chain_thickness": "chain thickness", "bracelet_type": "bracelet style", "link_style": "link style",
-    "band_width": "band width", "stone_arrangement": "stone arrangement",
     "pose": "pose", "proportion": "body proportions", "surface_detail": "surface detail level",
     "theme": "artistic theme", "base_type": "base/pedestal", "base_material": "base material",
     "clothing_drape": "clothing/draping", "texture_contrast": "texture contrast",
@@ -189,137 +193,54 @@ COMPONENT_NAMES = {
 
 
 # ============================================================================
-# EDIT-BASED PROMPT BUILDER
+# FAL.AI — Single key for everything
 # ============================================================================
 
-def build_edit_prompt(jewelry_type: str, param: str, old_value: str, new_value: str) -> str:
-    """
-    Build an edit-focused prompt that tells Flux to change ONLY one thing.
-    This preserves the original image and makes a precise single edit.
-    """
-    component = COMPONENT_NAMES.get(param, param.replace("_", " "))
-
-    prompt = (
-        f"In the provided image of a {jewelry_type}, change the {component} "
-        f"from {old_value} to {new_value}. "
-        f"Keep every other aspect of the {jewelry_type} exactly the same — "
-        f"same angle, same lighting, same background, same proportions, "
-        f"same stones, same overall design. Only modify the {component}."
-    )
-    return prompt
-
-
-# ============================================================================
-# GPT-4o Vision
-# ============================================================================
-
-def detect_and_analyze(image_bytes: bytes, openai_key: str) -> dict:
-    from openai import OpenAI
-    client = OpenAI(api_key=openai_key)
-    b64 = base64.b64encode(image_bytes).decode()
-    data_url = f"data:image/png;base64,{b64}"
-
-    # Detect type
-    r1 = client.chat.completions.create(model="gpt-4o", messages=[
-        {"role": "system", "content": "Identify the jewelry type. Reply ONLY one word: ring, pendant, earring, bangle, necklace, bracelet, or statue."},
-        {"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": "What type of jewelry is this? One word only."}
-        ]}
-    ], max_tokens=10, temperature=0.1)
-
-    detected = r1.choices[0].message.content.strip().lower().replace(".", "").replace(",", "").split()[0]
-    valid = list(ESSENTIAL_PARAMS.keys())
-    if detected not in valid:
-        for v in valid:
-            if v in detected:
-                detected = v
-                break
-        else:
-            detected = "ring"
-
-    # Analyze params
-    params = ESSENTIAL_PARAMS[detected]
-    pl = "".join(f"\n  {n}: [{', '.join(m['values'])}]" for n, m in params.items())
-
-    r2 = client.chat.completions.create(model="gpt-4o", messages=[
-        {"role": "system", "content": f"Analyze this {detected}. For each parameter pick ONE value from the list. Return ONLY a JSON object. No markdown, no backticks, no explanation.\n\nParameters:{pl}"},
-        {"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": f"Return JSON with {detected} parameter values."}
-        ]}
-    ], max_tokens=1500, temperature=0.1)
-
-    raw = r2.choices[0].message.content.strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    parsed = json.loads(raw)
-
-    validated = {}
-    for n, m in params.items():
-        v = parsed.get(n, m["values"][0])
-        if v not in m["values"]:
-            matched = False
-            for opt in m["values"]:
-                if opt.lower() in v.lower() or v.lower() in opt.lower():
-                    v = opt
-                    matched = True
-                    break
-            if not matched:
-                v = m["values"][0]
-        validated[n] = v
-
-    return {"type": detected, "params": validated}
-
-
-# ============================================================================
-# Variation generator
-# ============================================================================
-
-def generate_variations(jtype, current, selected, num):
-    essential = ESSENTIAL_PARAMS[jtype]
-    variations, used, idx, att = [], set(), 0, 0
-
-    while len(variations) < num and att < num * 10:
-        att += 1
-        p = selected[idx % len(selected)]
-        idx += 1
-        vals = essential[p]["values"]
-        cur = current.get(p, vals[0])
-        opts = [v for v in vals if v != cur]
-        if not opts:
-            continue
-        nv = random.choice(opts)
-        key = (p, nv)
-        if key in used and att < num * 3:
-            continue
-        used.add(key)
-
-        prompt = build_edit_prompt(jtype, p, cur, nv)
-
-        variations.append({
-            "index": len(variations) + 1,
-            "prompt": prompt,
-            "param": p,
-            "label": essential[p]["label"],
-            "old": cur,
-            "new": nv,
-        })
-    return variations
-
-
-# ============================================================================
-# Fal.ai — single API key for all models
-# ============================================================================
-
-def upload_to_fal(fal_key: str, img_bytes: bytes) -> str:
-    """Upload image to fal.ai storage, returns hosted URL."""
+def fal_upload(fal_key: str, img_bytes: bytes) -> str:
+    """Upload image to fal.ai storage."""
     import fal_client
     os.environ["FAL_KEY"] = fal_key
     return fal_client.upload(img_bytes, "image/png")
 
 
-def gen_fal(fal_key: str, source_url: str, prompt: str) -> Optional[str]:
-    """Call Flux 2 turbo edit — image_urls is an array."""
+def fal_caption(fal_key: str, image_url: str) -> str:
+    """Use Florence-2 on fal.ai to caption the image for type detection."""
+    import fal_client
+    os.environ["FAL_KEY"] = fal_key
+    result = fal_client.subscribe(
+        "fal-ai/florence-2-large/more-detailed-caption",
+        arguments={"image_url": image_url},
+    )
+    if isinstance(result, dict):
+        return result.get("results", "")
+    return str(result)
+
+
+def detect_type_from_caption(caption: str) -> str:
+    """Parse Florence-2 caption to detect jewelry type."""
+    caption_lower = caption.lower()
+
+    # Priority order — most specific first
+    type_keywords = {
+        "earring":  ["earring", "ear ring", "stud", "hoop earring", "dangle"],
+        "bangle":   ["bangle", "cuff bracelet", "cuff"],
+        "bracelet": ["bracelet", "wristband", "chain link bracelet", "tennis bracelet"],
+        "necklace": ["necklace", "chain", "choker", "pendant chain"],
+        "pendant":  ["pendant", "locket", "charm necklace"],
+        "ring":     ["ring", "band", "solitaire", "engagement"],
+        "statue":   ["statue", "figurine", "sculpture", "figure", "bust"],
+    }
+
+    for jtype, keywords in type_keywords.items():
+        for kw in keywords:
+            if kw in caption_lower:
+                return jtype
+
+    return "ring"  # Default fallback
+
+
+def fal_edit(fal_key: str, source_url: str, prompt: str) -> Optional[str]:
+    """Call Flux 2 Turbo Edit — edit image with prompt."""
     import fal_client
     os.environ["FAL_KEY"] = fal_key
 
@@ -333,7 +254,6 @@ def gen_fal(fal_key: str, source_url: str, prompt: str) -> Optional[str]:
             "guidance_scale": 25,
         },
     )
-
     if isinstance(result, dict):
         images = result.get("images", [])
         if images and isinstance(images[0], dict):
@@ -342,71 +262,110 @@ def gen_fal(fal_key: str, source_url: str, prompt: str) -> Optional[str]:
 
 
 # ============================================================================
+# EDIT PROMPT BUILDER
+# ============================================================================
+
+def build_edit_prompt(jewelry_type: str, param: str, new_value: str) -> str:
+    """
+    Edit-focused prompt — tells Flux to change ONLY one component.
+    Does NOT reference old value (Flux doesn't know what's current, it sees the image).
+    """
+    component = COMPONENT_NAMES.get(param, param.replace("_", " "))
+
+    return (
+        f"In the provided image of a {jewelry_type}, change the {component} "
+        f"to a {new_value}. "
+        f"Do not change anything else in the image. "
+        f"Keep the same angle, lighting, background, proportions, and overall design. "
+        f"Only modify the {component}."
+    )
+
+
+# ============================================================================
+# VARIATION GENERATOR
+# ============================================================================
+
+def generate_variations(jtype, selected, num):
+    essential = ESSENTIAL_PARAMS[jtype]
+    variations, used, idx, att = [], set(), 0, 0
+
+    while len(variations) < num and att < num * 10:
+        att += 1
+        p = selected[idx % len(selected)]
+        idx += 1
+        vals = essential[p]["values"]
+        nv = random.choice(vals)
+        key = (p, nv)
+        if key in used and att < num * 3:
+            continue
+        used.add(key)
+
+        prompt = build_edit_prompt(jtype, p, nv)
+        variations.append({
+            "index": len(variations) + 1,
+            "prompt": prompt,
+            "param": p,
+            "label": essential[p]["label"],
+            "new": nv,
+        })
+    return variations
+
+
+# ============================================================================
 # MAIN APP
 # ============================================================================
 
 def main():
-    # ---- SIDEBAR with API keys ----
+    # ---- SIDEBAR ----
     with st.sidebar:
-        st.markdown("### ⚙️ API Keys")
-        st.markdown("Fal.ai uses a **single key** for all models.")
+        st.markdown("### 🔑 Fal.ai API Key")
+        st.markdown("One key for everything — detection + generation.")
         fal_key = st.text_input(
             label="Fal.ai API Key",
             type="password",
             placeholder="Your FAL_KEY...",
-            help="Get from https://fal.ai/dashboard/keys"
-        )
-        openai_key = st.text_input(
-            label="OpenAI API Key",
-            type="password",
-            placeholder="sk-...",
-            help="Get from https://platform.openai.com/api-keys"
+            help="Get from https://fal.ai/dashboard/keys",
         )
 
         if fal_key:
-            st.success("Fal.ai key set", icon="✅")
+            st.success("API key set", icon="✅")
         else:
-            st.warning("Fal.ai key required", icon="⚠️")
-
-        if openai_key:
-            st.success("OpenAI key set", icon="✅")
-        else:
-            st.warning("OpenAI key required", icon="⚠️")
+            st.warning("API key required", icon="⚠️")
 
         st.markdown("---")
         st.markdown("### 📖 How it works")
         st.markdown(
-            "1. Upload a jewelry image\n"
-            "2. GPT-4o detects type & components\n"
-            "3. Tick what to vary\n"
-            "4. Generate 10–50 targeted edits\n\n"
-            "Each variation changes **one component** using an edit prompt:\n"
+            "**1 API key, 2 models:**\n\n"
+            "🔍 **Florence-2** — detects jewelry type from image\n\n"
+            "🎨 **Flux 2 Edit** — generates single-component edits\n\n"
+            "Each variation uses an edit prompt:\n\n"
             '*"In the provided image, change the shank to split-shank. '
             'Do not change anything else."*'
         )
         st.markdown("---")
-        st.markdown("### 📊 Minimum params")
+        st.markdown("### 📊 Min params required")
         st.markdown("| Images | Min |\n|--------|-----|\n| 10 | 1 |\n| 20–30 | 2 |\n| 40 | 3 |\n| 50 | 4 |")
 
     # ---- HEADER ----
     st.markdown(
         '<div class="main-header">'
         '<h1>💎 JewelBench — Bulk Variation Generator</h1>'
-        '<p>Upload a jewelry image → select what to change → generate precise single-component edits via Fal.ai</p>'
+        '<p>Upload → detect → select components → generate precise single-edit variations — all via Fal.ai</p>'
         '</div>',
         unsafe_allow_html=True,
     )
 
     # ---- SESSION STATE ----
-    for key, default in [("analysis", None), ("source_bytes", None), ("fal_url", None), ("generated", [])]:
-        if key not in st.session_state:
-            st.session_state[key] = default
+    for k, d in [("analysis", None), ("source_bytes", None), ("fal_url", None),
+                 ("generated", []), ("caption", None)]:
+        if k not in st.session_state:
+            st.session_state[k] = d
 
     # ================================================================
-    # STEP 1: Upload
+    # STEP 1: Upload + Analyze
     # ================================================================
     st.markdown('<p class="section-title">Step 1 — Upload source image</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Upload a jewelry photo. AI will auto-detect the type and read all components.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Upload a jewelry photo. Florence-2 will detect the type, then you confirm and select what to change.</p>', unsafe_allow_html=True)
 
     col_up, col_prev = st.columns([1, 1])
 
@@ -423,60 +382,73 @@ def main():
         elif st.session_state.source_bytes is not None:
             st.image(st.session_state.source_bytes, caption="Source image", width=280)
 
-    # Keys check
-    if not openai_key or not fal_key:
-        st.info("👈 Enter both API keys in the sidebar to get started.")
+    if not fal_key:
+        st.info("👈 Enter your Fal.ai API key in the sidebar to get started.")
 
     # Analyze button
-    can_analyze = uploaded is not None and bool(openai_key)
+    can_analyze = uploaded is not None and bool(fal_key)
     if st.button("🔍 Analyze Image", type="primary", disabled=not can_analyze):
         img_bytes = uploaded.getvalue()
         st.session_state.source_bytes = img_bytes
         st.session_state.generated = []
         st.session_state.analysis = None
-        st.session_state.fal_url = None
 
-        with st.spinner("🔍 Analyzing with GPT-4o Vision..."):
+        # Upload to fal.ai
+        with st.spinner("☁️ Uploading image to Fal.ai..."):
             try:
-                result = detect_and_analyze(img_bytes, openai_key)
-                st.session_state.analysis = result
+                fal_url = fal_upload(fal_key, img_bytes)
+                st.session_state.fal_url = fal_url
             except Exception as e:
-                st.error(f"Analysis failed: {e}")
+                st.error(f"Upload failed: {e}")
                 st.stop()
 
-        if fal_key:
-            with st.spinner("☁️ Uploading image to Fal.ai..."):
-                try:
-                    st.session_state.fal_url = upload_to_fal(fal_key, img_bytes)
-                except Exception as e:
-                    st.warning(f"Fal.ai upload issue: {e}")
+        # Detect type with Florence-2
+        with st.spinner("🔍 Detecting jewelry type with Florence-2..."):
+            try:
+                caption = fal_caption(fal_key, fal_url)
+                st.session_state.caption = str(caption)
+                detected_type = detect_type_from_caption(str(caption))
+                st.session_state.analysis = {"type": detected_type, "caption": str(caption)}
+            except Exception as e:
+                st.error(f"Detection failed: {e}")
+                st.stop()
 
         st.rerun()
 
     # ================================================================
-    # STEP 2: Detection + Selection
+    # STEP 2: Confirm type + Select params
     # ================================================================
     if st.session_state.analysis:
         analysis = st.session_state.analysis
-        jtype = analysis["type"]
-        det_params = analysis["params"]
-        essential = ESSENTIAL_PARAMS[jtype]
+        auto_type = analysis["type"]
+        caption = analysis.get("caption", "")
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
 
-        # Detection popup
+        # Detection result with type override
         st.markdown(
             f'<div class="detect-box">'
-            f'<span class="detect-type">{TYPE_ICONS.get(jtype, "💎")} Detected: {jtype}</span>'
-            f'<span class="detect-sub"> — {len(essential)} adjustable components identified</span>'
+            f'<span class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</span>'
+            f'<div class="detect-sub">Florence-2 caption: <em>"{caption[:200]}{"..." if len(caption) > 200 else ""}"</em></div>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
+        # Let user override type if detection is wrong
+        jtype = st.selectbox(
+            label="Confirm or change jewelry type",
+            options=VALID_TYPES,
+            index=VALID_TYPES.index(auto_type),
+            format_func=lambda x: f"{TYPE_ICONS.get(x, '💎')} {x.capitalize()}",
+        )
+
+        essential = ESSENTIAL_PARAMS[jtype]
+
+        st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Step 2 — Select what to change</p>', unsafe_allow_html=True)
         st.markdown(
-            '<p class="section-sub">Tick the components to vary. '
-            'Each generates an edit prompt like: <em>"In the provided image, change the X to Y. Do not change anything else."</em></p>',
+            '<p class="section-sub">Tick components to vary. Each generates an edit like: '
+            '<em>"In the provided image, change the shank to split-shank. Do not change anything else."</em></p>',
             unsafe_allow_html=True,
         )
 
@@ -487,13 +459,11 @@ def main():
 
         for i, pn in enumerate(pnames):
             meta = essential[pn]
-            cv = det_params.get(pn, meta["values"][0])
             col = c1 if i < half else c2
             with col:
-                if st.checkbox(meta["label"], key=f"cb_{pn}"):
+                if st.checkbox(meta["label"], key=f"cb_{jtype}_{pn}"):
                     selected.append(pn)
                 st.markdown(
-                    f'<span class="param-current">{cv}</span> '
                     f'<span class="param-count">{len(meta["values"])} options</span>',
                     unsafe_allow_html=True,
                 )
@@ -526,15 +496,11 @@ def main():
                 )
 
         can_gen = len(selected) >= mn and bool(fal_key) and st.session_state.fal_url is not None
-        if not fal_key:
-            st.info("👈 Enter Fal.ai key in sidebar to generate.")
-        elif not st.session_state.fal_url:
-            st.warning("Image not uploaded to Fal.ai. Re-analyze with Fal.ai key set.")
 
         if st.button("🚀 Generate Variations", type="primary", disabled=not can_gen, use_container_width=True):
-            variations = generate_variations(jtype, det_params, selected, num)
+            variations = generate_variations(jtype, selected, num)
 
-            # Distribution stats
+            # Stats
             dist = {}
             for v in variations:
                 dist[v["label"]] = dist.get(v["label"], 0) + 1
@@ -547,13 +513,13 @@ def main():
                             unsafe_allow_html=True,
                         )
 
-            # Show variation plan with edit prompts
-            with st.expander("📋 Variation plan & prompts"):
+            # Plan with prompts
+            with st.expander("📋 Variation plan & edit prompts"):
                 for v in variations:
-                    st.markdown(f"**{v['index']}.** [{v['label']}] `{v['old']}` → `{v['new']}`")
+                    st.markdown(f"**{v['index']}.** [{v['label']}] → `{v['new']}`")
                     st.markdown(f'<div class="prompt-box">{v["prompt"]}</div>', unsafe_allow_html=True)
 
-            # Generate images
+            # Generate
             prog = st.progress(0, text="Starting generation...")
             gen = []
 
@@ -563,13 +529,12 @@ def main():
                     text=f"{i + 1}/{len(variations)}: {v['label']} → {v['new']}",
                 )
                 try:
-                    img_url = gen_fal(fal_key, st.session_state.fal_url, v["prompt"])
+                    img_url = fal_edit(fal_key, st.session_state.fal_url, v["prompt"])
                     if img_url:
                         img_resp = requests.get(img_url, timeout=60)
                         gen.append({
                             "bytes": img_resp.content,
                             "label": v["label"],
-                            "old": v["old"],
                             "new": v["new"],
                             "url": img_url,
                             "prompt": v["prompt"],
@@ -606,16 +571,13 @@ def main():
                         st.markdown(
                             f'<div style="text-align:center">'
                             f'<span class="var-change">{im["label"]}</span><br>'
-                            f'<span class="var-label">{im["old"]} → {im["new"]}</span>'
+                            f'<span class="var-label">→ {im["new"]}</span>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
 
-        # Download log with prompts
-        log = [{
-            "label": i["label"], "old": i["old"], "new": i["new"],
-            "url": i["url"], "prompt": i["prompt"],
-        } for i in imgs]
+        # Download
+        log = [{"label": i["label"], "new": i["new"], "url": i["url"], "prompt": i["prompt"]} for i in imgs]
         st.download_button(
             label="📥 Download log with prompts (JSON)",
             data=json.dumps(log, indent=2),
