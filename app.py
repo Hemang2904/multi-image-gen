@@ -5,13 +5,13 @@ Uses ONLY Fal.ai (single API key):
   - Florence-2 Large → image captioning + type detection
   - Flux 2 Turbo Edit → single-component image editing
 
-Edit prompt style:
-  "In the provided image of a ring, change the shank from knife-edge
-   to split-shank. Do not change anything else in the image."
-
 RUN:
   pip install streamlit fal-client Pillow requests
   streamlit run jewelbench_streamlit.py
+
+NOTE: Create .streamlit/config.toml with:
+  [theme]
+  base = "light"
 """
 
 import streamlit as st
@@ -20,9 +20,8 @@ import json
 import random
 import base64
 import time
-import re
 import requests
-from typing import Dict, List, Optional
+from typing import Optional
 
 st.set_page_config(
     page_title="JewelBench — Bulk Variations",
@@ -32,44 +31,114 @@ st.set_page_config(
 )
 
 # ============================================================================
-# CSS
+# CSS — Force light colors, explicit text colors everywhere
 # ============================================================================
 st.markdown("""
 <style>
-    .stApp { background-color: #FFFFFF; }
-    section[data-testid="stSidebar"] { background-color: #F8FAFC; }
+    /* Force light background everywhere */
+    .stApp, .main, [data-testid="stAppViewContainer"] {
+        background-color: #FFFFFF !important;
+        color: #1a1a1a !important;
+    }
 
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #F8FAFC !important;
+        color: #1a1a1a !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #1a1a1a !important;
+    }
+    section[data-testid="stSidebar"] .stSuccess p,
+    section[data-testid="stSidebar"] .stWarning p {
+        color: inherit !important;
+    }
+
+    /* Force ALL text to be dark */
+    .stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown li,
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+    .stText, label, .stSelectbox label, .stCheckbox label,
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span {
+        color: #1a1a1a !important;
+    }
+
+    /* Checkbox label text — THE MAIN FIX */
+    .stCheckbox label p,
+    .stCheckbox label span,
+    .stCheckbox > label > div:last-child p,
+    [data-testid="stCheckbox"] label p,
+    [data-testid="stCheckbox"] label span,
+    [data-testid="stCheckbox"] label div {
+        color: #1a1a1a !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+    }
+
+    /* Selectbox text */
+    .stSelectbox div[data-baseweb="select"] span,
+    .stSelectbox [data-testid="stMarkdownContainer"] p {
+        color: #1a1a1a !important;
+    }
+    .stSelectbox div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+    }
+
+    /* Select slider */
+    .stSlider label, .stSlider p, .stSlider span {
+        color: #1a1a1a !important;
+    }
+
+    /* File uploader */
+    [data-testid="stFileUploader"] label p,
+    [data-testid="stFileUploader"] span {
+        color: #1a1a1a !important;
+    }
+
+    /* Expander */
+    .streamlit-expanderHeader p, .streamlit-expanderHeader span {
+        color: #1a1a1a !important;
+    }
+
+    /* Custom components */
     .main-header {
         background: linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%);
         padding: 24px 32px; border-radius: 12px; margin-bottom: 24px;
     }
-    .main-header h1 { color: white !important; font-size: 28px !important; font-weight: 600 !important; margin: 0 !important; }
-    .main-header p { color: rgba(255,255,255,0.8) !important; font-size: 14px !important; margin: 4px 0 0 0 !important; }
+    .main-header h1 { color: #FFFFFF !important; font-size: 28px !important; font-weight: 600 !important; margin: 0 !important; }
+    .main-header p { color: rgba(255,255,255,0.85) !important; font-size: 14px !important; margin: 4px 0 0 0 !important; }
 
-    .section-title { font-size: 18px; font-weight: 600; color: #1B3A5C; margin: 0 0 4px 0; }
-    .section-sub { font-size: 13px; color: #64748B; margin: 0 0 16px 0; }
+    .section-title { font-size: 18px; font-weight: 600; color: #1B3A5C !important; margin: 0 0 4px 0; }
+    .section-sub { font-size: 13px; color: #4a5568 !important; margin: 0 0 16px 0; }
 
-    .param-count { display: inline-block; background: #DBEAFE; color: #1E40AF; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .param-name { font-size: 14px; font-weight: 500; color: #1a1a1a !important; display: inline; }
+    .param-count { display: inline-block; background: #DBEAFE; color: #1E40AF !important; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-left: 6px; }
 
     .detect-box { background: #F0F7FF; border: 2px solid #2E75B6; border-radius: 12px; padding: 20px 24px; margin: 16px 0; }
-    .detect-type { font-size: 22px; font-weight: 700; color: #1B3A5C; text-transform: capitalize; }
-    .detect-sub { font-size: 13px; color: #64748B; margin-top: 6px; line-height: 1.5; }
+    .detect-type { font-size: 22px; font-weight: 700; color: #1B3A5C !important; text-transform: capitalize; }
+    .detect-caption { font-size: 13px; color: #4a5568 !important; margin-top: 8px; line-height: 1.5; font-style: italic; }
 
-    .card-success { background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 14px 20px; margin-bottom: 12px; }
+    .card-success { background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 14px 20px; margin-bottom: 12px; color: #166534 !important; }
     .blue-divider { height: 3px; background: linear-gradient(90deg, #2E75B6, transparent); border: none; border-radius: 2px; margin: 24px 0; }
 
     .stat-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 16px; text-align: center; }
-    .stat-num { font-size: 28px; font-weight: 700; color: #2E75B6; margin: 0; }
-    .stat-label { font-size: 12px; color: #94A3B8; margin: 0; }
+    .stat-num { font-size: 28px; font-weight: 700; color: #2E75B6 !important; margin: 0; }
+    .stat-label { font-size: 12px; color: #64748B !important; margin: 0; }
 
-    .min-warn { background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #92400E; }
-    .var-change { font-size: 11px; color: #2E75B6; font-weight: 600; }
-    .var-label { font-size: 11px; color: #64748B; }
+    .min-warn { background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #92400E !important; }
 
-    .prompt-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #475569; font-family: monospace; margin: 4px 0 12px 0; line-height: 1.5; }
+    .var-change { font-size: 12px; color: #2E75B6 !important; font-weight: 600; }
+    .var-label { font-size: 11px; color: #4a5568 !important; }
+
+    .prompt-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #374151 !important; font-family: monospace; margin: 4px 0 12px 0; line-height: 1.5; }
 
     .stProgress > div > div > div > div { background-color: #2E75B6; }
     #MainMenu, footer, header { visibility: hidden; }
+
+    /* Info/warning boxes */
+    .stInfo, .stWarning, .stError, .stSuccess {
+        color: #1a1a1a !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -193,85 +262,53 @@ COMPONENT_NAMES = {
 
 
 # ============================================================================
-# FAL.AI — Single key for everything
+# FAL.AI functions
 # ============================================================================
 
-def fal_upload(fal_key: str, img_bytes: bytes) -> str:
-    """Upload image to fal.ai storage."""
+def fal_upload(fal_key, img_bytes):
     import fal_client
     os.environ["FAL_KEY"] = fal_key
     return fal_client.upload(img_bytes, "image/png")
 
-
-def fal_caption(fal_key: str, image_url: str) -> str:
-    """Use Florence-2 on fal.ai to caption the image for type detection."""
+def fal_caption(fal_key, image_url):
     import fal_client
     os.environ["FAL_KEY"] = fal_key
-    result = fal_client.subscribe(
-        "fal-ai/florence-2-large/more-detailed-caption",
-        arguments={"image_url": image_url},
-    )
+    result = fal_client.subscribe("fal-ai/florence-2-large/more-detailed-caption", arguments={"image_url": image_url})
     if isinstance(result, dict):
-        return result.get("results", "")
+        return result.get("results", str(result))
     return str(result)
 
-
-def detect_type_from_caption(caption: str) -> str:
-    """Parse Florence-2 caption to detect jewelry type."""
-    caption_lower = caption.lower()
-
-    # Priority order — most specific first
-    type_keywords = {
-        "earring":  ["earring", "ear ring", "stud", "hoop earring", "dangle"],
-        "bangle":   ["bangle", "cuff bracelet", "cuff"],
-        "bracelet": ["bracelet", "wristband", "chain link bracelet", "tennis bracelet"],
-        "necklace": ["necklace", "chain", "choker", "pendant chain"],
-        "pendant":  ["pendant", "locket", "charm necklace"],
-        "ring":     ["ring", "band", "solitaire", "engagement"],
-        "statue":   ["statue", "figurine", "sculpture", "figure", "bust"],
-    }
-
-    for jtype, keywords in type_keywords.items():
+def detect_type_from_caption(caption):
+    cl = caption.lower()
+    for jtype, keywords in {
+        "earring": ["earring","ear ring","stud earring","hoop earring"],
+        "bangle": ["bangle","cuff bracelet","cuff"],
+        "bracelet": ["bracelet","wristband","tennis bracelet"],
+        "necklace": ["necklace","chain necklace","choker"],
+        "pendant": ["pendant","locket"],
+        "ring": ["ring","band","solitaire","engagement"],
+        "statue": ["statue","figurine","sculpture","figure","bust"],
+    }.items():
         for kw in keywords:
-            if kw in caption_lower:
+            if kw in cl:
                 return jtype
+    return "ring"
 
-    return "ring"  # Default fallback
-
-
-def fal_edit(fal_key: str, source_url: str, prompt: str) -> Optional[str]:
-    """Call Flux 2 Turbo Edit — edit image with prompt."""
+def fal_edit(fal_key, source_url, prompt):
     import fal_client
     os.environ["FAL_KEY"] = fal_key
-
-    result = fal_client.subscribe(
-        "fal-ai/flux-2/turbo/edit",
-        arguments={
-            "image_urls": [source_url],
-            "prompt": prompt,
-            "num_images": 1,
-            "num_inference_steps": 6,
-            "guidance_scale": 25,
-        },
-    )
+    result = fal_client.subscribe("fal-ai/flux-2/turbo/edit", arguments={
+        "image_urls": [source_url], "prompt": prompt,
+        "num_images": 1, "num_inference_steps": 6, "guidance_scale": 25,
+    })
     if isinstance(result, dict):
         images = result.get("images", [])
         if images and isinstance(images[0], dict):
             return images[0].get("url")
     return None
 
-
-# ============================================================================
-# EDIT PROMPT BUILDER
-# ============================================================================
-
-def build_edit_prompt(jewelry_type: str, param: str, new_value: str) -> str:
-    """
-    Edit-focused prompt — tells Flux to change ONLY one component.
-    Does NOT reference old value (Flux doesn't know what's current, it sees the image).
-    """
+def build_edit_prompt(jewelry_type, param, new_value):
     component = COMPONENT_NAMES.get(param, param.replace("_", " "))
-
     return (
         f"In the provided image of a {jewelry_type}, change the {component} "
         f"to a {new_value}. "
@@ -280,102 +317,70 @@ def build_edit_prompt(jewelry_type: str, param: str, new_value: str) -> str:
         f"Only modify the {component}."
     )
 
-
-# ============================================================================
-# VARIATION GENERATOR
-# ============================================================================
-
 def generate_variations(jtype, selected, num):
     essential = ESSENTIAL_PARAMS[jtype]
     variations, used, idx, att = [], set(), 0, 0
-
     while len(variations) < num and att < num * 10:
         att += 1
-        p = selected[idx % len(selected)]
-        idx += 1
+        p = selected[idx % len(selected)]; idx += 1
         vals = essential[p]["values"]
         nv = random.choice(vals)
         key = (p, nv)
-        if key in used and att < num * 3:
-            continue
+        if key in used and att < num * 3: continue
         used.add(key)
-
         prompt = build_edit_prompt(jtype, p, nv)
-        variations.append({
-            "index": len(variations) + 1,
-            "prompt": prompt,
-            "param": p,
-            "label": essential[p]["label"],
-            "new": nv,
-        })
+        variations.append({"index": len(variations)+1, "prompt": prompt, "param": p, "label": essential[p]["label"], "new": nv})
     return variations
 
 
 # ============================================================================
-# MAIN APP
+# MAIN
 # ============================================================================
 
 def main():
     # ---- SIDEBAR ----
     with st.sidebar:
-        st.markdown("### 🔑 Fal.ai API Key")
-        st.markdown("One key for everything — detection + generation.")
-        fal_key = st.text_input(
-            label="Fal.ai API Key",
-            type="password",
-            placeholder="Your FAL_KEY...",
-            help="Get from https://fal.ai/dashboard/keys",
-        )
-
+        st.markdown("## 🔑 Fal.ai API Key")
+        st.markdown("One key for everything.")
+        fal_key = st.text_input(label="Fal.ai API Key", type="password", placeholder="Your FAL_KEY...", help="https://fal.ai/dashboard/keys")
         if fal_key:
             st.success("API key set", icon="✅")
         else:
             st.warning("API key required", icon="⚠️")
-
-        st.markdown("---")
-        st.markdown("### 📖 How it works")
-        st.markdown(
-            "**1 API key, 2 models:**\n\n"
-            "🔍 **Florence-2** — detects jewelry type from image\n\n"
-            "🎨 **Flux 2 Edit** — generates single-component edits\n\n"
-            "Each variation uses an edit prompt:\n\n"
-            '*"In the provided image, change the shank to split-shank. '
-            'Do not change anything else."*'
-        )
-        st.markdown("---")
-        st.markdown("### 📊 Min params required")
-        st.markdown("| Images | Min |\n|--------|-----|\n| 10 | 1 |\n| 20–30 | 2 |\n| 40 | 3 |\n| 50 | 4 |")
+        st.divider()
+        st.markdown("## 📖 How it works")
+        st.markdown("1. Upload a jewelry image")
+        st.markdown("2. Florence-2 detects the type")
+        st.markdown("3. Tick what to vary")
+        st.markdown("4. Generate 10–50 edit variations")
+        st.divider()
+        st.markdown("**Min params required:**")
+        st.markdown("10 imgs → 1 param")
+        st.markdown("20-30 imgs → 2 params")
+        st.markdown("40 imgs → 3 params")
+        st.markdown("50 imgs → 4 params")
 
     # ---- HEADER ----
     st.markdown(
         '<div class="main-header">'
         '<h1>💎 JewelBench — Bulk Variation Generator</h1>'
-        '<p>Upload → detect → select components → generate precise single-edit variations — all via Fal.ai</p>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+        '<p>Upload → detect → select → generate precise single-edit variations — all via Fal.ai</p>'
+        '</div>', unsafe_allow_html=True)
 
     # ---- SESSION STATE ----
-    for k, d in [("analysis", None), ("source_bytes", None), ("fal_url", None),
-                 ("generated", []), ("caption", None)]:
+    for k, d in [("analysis", None), ("source_bytes", None), ("fal_url", None), ("generated", [])]:
         if k not in st.session_state:
             st.session_state[k] = d
 
     # ================================================================
-    # STEP 1: Upload + Analyze
+    # STEP 1
     # ================================================================
     st.markdown('<p class="section-title">Step 1 — Upload source image</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Upload a jewelry photo. Florence-2 will detect the type, then you confirm and select what to change.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-sub">Upload a jewelry photo. Florence-2 will detect the type.</p>', unsafe_allow_html=True)
 
     col_up, col_prev = st.columns([1, 1])
-
     with col_up:
-        uploaded = st.file_uploader(
-            label="Upload jewelry image",
-            type=["png", "jpg", "jpeg", "webp"],
-            label_visibility="collapsed",
-        )
-
+        uploaded = st.file_uploader(label="Upload jewelry image", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
     with col_prev:
         if uploaded is not None:
             st.image(uploaded, caption="Source image", width=280)
@@ -383,32 +388,26 @@ def main():
             st.image(st.session_state.source_bytes, caption="Source image", width=280)
 
     if not fal_key:
-        st.info("👈 Enter your Fal.ai API key in the sidebar to get started.")
+        st.info("👈 Enter your Fal.ai API key in the sidebar.")
 
-    # Analyze button
-    can_analyze = uploaded is not None and bool(fal_key)
-    if st.button("🔍 Analyze Image", type="primary", disabled=not can_analyze):
+    if st.button("🔍 Analyze Image", type="primary", disabled=not (uploaded and fal_key)):
         img_bytes = uploaded.getvalue()
         st.session_state.source_bytes = img_bytes
         st.session_state.generated = []
         st.session_state.analysis = None
 
-        # Upload to fal.ai
-        with st.spinner("☁️ Uploading image to Fal.ai..."):
+        with st.spinner("☁️ Uploading to Fal.ai..."):
             try:
-                fal_url = fal_upload(fal_key, img_bytes)
-                st.session_state.fal_url = fal_url
+                st.session_state.fal_url = fal_upload(fal_key, img_bytes)
             except Exception as e:
                 st.error(f"Upload failed: {e}")
                 st.stop()
 
-        # Detect type with Florence-2
-        with st.spinner("🔍 Detecting jewelry type with Florence-2..."):
+        with st.spinner("🔍 Detecting type with Florence-2..."):
             try:
-                caption = fal_caption(fal_key, fal_url)
-                st.session_state.caption = str(caption)
-                detected_type = detect_type_from_caption(str(caption))
-                st.session_state.analysis = {"type": detected_type, "caption": str(caption)}
+                caption = str(fal_caption(fal_key, st.session_state.fal_url))
+                detected = detect_type_from_caption(caption)
+                st.session_state.analysis = {"type": detected, "caption": caption}
             except Exception as e:
                 st.error(f"Detection failed: {e}")
                 st.stop()
@@ -416,7 +415,7 @@ def main():
         st.rerun()
 
     # ================================================================
-    # STEP 2: Confirm type + Select params
+    # STEP 2
     # ================================================================
     if st.session_state.analysis:
         analysis = st.session_state.analysis
@@ -425,18 +424,17 @@ def main():
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
 
-        # Detection result with type override
+        # Detection result
         st.markdown(
             f'<div class="detect-box">'
-            f'<span class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</span>'
-            f'<div class="detect-sub">Florence-2 caption: <em>"{caption[:200]}{"..." if len(caption) > 200 else ""}"</em></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+            f'<div class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</div>'
+            f'<div class="detect-caption">"{caption[:250]}{"..." if len(caption) > 250 else ""}"</div>'
+            f'</div>', unsafe_allow_html=True)
 
-        # Let user override type if detection is wrong
+        # Type override
+        st.markdown("**Confirm or change the detected type:**")
         jtype = st.selectbox(
-            label="Confirm or change jewelry type",
+            label="Jewelry type",
             options=VALID_TYPES,
             index=VALID_TYPES.index(auto_type),
             format_func=lambda x: f"{TYPE_ICONS.get(x, '💎')} {x.capitalize()}",
@@ -446,11 +444,7 @@ def main():
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Step 2 — Select what to change</p>', unsafe_allow_html=True)
-        st.markdown(
-            '<p class="section-sub">Tick components to vary. Each generates an edit like: '
-            '<em>"In the provided image, change the shank to split-shank. Do not change anything else."</em></p>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<p class="section-sub">Tick components to vary. Each generates a targeted edit prompt.</p>', unsafe_allow_html=True)
 
         pnames = list(essential.keys())
         half = (len(pnames) + 1) // 2
@@ -461,39 +455,29 @@ def main():
             meta = essential[pn]
             col = c1 if i < half else c2
             with col:
-                if st.checkbox(meta["label"], key=f"cb_{jtype}_{pn}"):
-                    selected.append(pn)
-                st.markdown(
-                    f'<span class="param-count">{len(meta["values"])} options</span>',
-                    unsafe_allow_html=True,
+                # Use st.checkbox with a proper visible label
+                checked = st.checkbox(
+                    label=f"{meta['label']}  ({len(meta['values'])} options)",
+                    key=f"cb_{jtype}_{pn}",
                 )
-                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                if checked:
+                    selected.append(pn)
 
         # ============================================================
-        # STEP 3: Generate
+        # STEP 3
         # ============================================================
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
         st.markdown('<p class="section-title">Step 3 — Generate variations</p>', unsafe_allow_html=True)
 
         gc1, gc2 = st.columns([1, 2])
         with gc1:
-            num = st.select_slider(
-                label="Number of images",
-                options=[10, 20, 30, 40, 50],
-                value=10,
-            )
+            num = st.select_slider(label="Number of images", options=[10,20,30,40,50], value=10)
         with gc2:
             mn = get_min_params(num)
             if len(selected) < mn:
-                st.markdown(
-                    f'<div class="min-warn">⚠️ Select at least <b>{mn}</b> param(s) for {num} images. You have <b>{len(selected)}</b>.</div>',
-                    unsafe_allow_html=True,
-                )
+                st.warning(f"Select at least {mn} param(s) for {num} images. You have {len(selected)}.")
             else:
-                st.markdown(
-                    f'<div class="card-success">✓ <b>{len(selected)}</b> selected — ready for <b>{num}</b> images</div>',
-                    unsafe_allow_html=True,
-                )
+                st.success(f"{len(selected)} selected — ready for {num} images")
 
         can_gen = len(selected) >= mn and bool(fal_key) and st.session_state.fal_url is not None
 
@@ -508,49 +492,31 @@ def main():
             for i, (lb, ct) in enumerate(sorted(dist.items(), key=lambda x: -x[1])):
                 if i < 5:
                     with scols[i]:
-                        st.markdown(
-                            f'<div class="stat-box"><p class="stat-num">{ct}</p><p class="stat-label">{lb}</p></div>',
-                            unsafe_allow_html=True,
-                        )
+                        st.metric(label=lb, value=ct)
 
-            # Plan with prompts
             with st.expander("📋 Variation plan & edit prompts"):
                 for v in variations:
                     st.markdown(f"**{v['index']}.** [{v['label']}] → `{v['new']}`")
-                    st.markdown(f'<div class="prompt-box">{v["prompt"]}</div>', unsafe_allow_html=True)
+                    st.code(v["prompt"], language=None)
 
-            # Generate
             prog = st.progress(0, text="Starting generation...")
             gen = []
 
             for i, v in enumerate(variations):
-                prog.progress(
-                    (i + 1) / len(variations),
-                    text=f"{i + 1}/{len(variations)}: {v['label']} → {v['new']}",
-                )
+                prog.progress((i+1)/len(variations), text=f"{i+1}/{len(variations)}: {v['label']} → {v['new']}")
                 try:
                     img_url = fal_edit(fal_key, st.session_state.fal_url, v["prompt"])
                     if img_url:
-                        img_resp = requests.get(img_url, timeout=60)
-                        gen.append({
-                            "bytes": img_resp.content,
-                            "label": v["label"],
-                            "new": v["new"],
-                            "url": img_url,
-                            "prompt": v["prompt"],
-                        })
+                        ir = requests.get(img_url, timeout=60)
+                        gen.append({"bytes": ir.content, "label": v["label"], "new": v["new"], "url": img_url, "prompt": v["prompt"]})
                 except Exception as e:
-                    st.warning(f"#{i + 1} failed: {e}")
-
-                if i < len(variations) - 1:
+                    st.warning(f"#{i+1} failed: {e}")
+                if i < len(variations)-1:
                     time.sleep(0.5)
 
             prog.empty()
             st.session_state.generated = gen
-            st.markdown(
-                f'<div class="card-success">✅ Generated <b>{len(gen)}/{len(variations)}</b> images</div>',
-                unsafe_allow_html=True,
-            )
+            st.success(f"✅ Generated {len(gen)}/{len(variations)} images")
 
     # ================================================================
     # STEP 4: Results
@@ -568,22 +534,10 @@ def main():
                     im = imgs[ix]
                     with cols[j]:
                         st.image(im["bytes"], use_container_width=True)
-                        st.markdown(
-                            f'<div style="text-align:center">'
-                            f'<span class="var-change">{im["label"]}</span><br>'
-                            f'<span class="var-label">→ {im["new"]}</span>'
-                            f'</div>',
-                            unsafe_allow_html=True,
-                        )
+                        st.markdown(f"**{im['label']}** → {im['new']}")
 
-        # Download
         log = [{"label": i["label"], "new": i["new"], "url": i["url"], "prompt": i["prompt"]} for i in imgs]
-        st.download_button(
-            label="📥 Download log with prompts (JSON)",
-            data=json.dumps(log, indent=2),
-            file_name="variations_log.json",
-            mime="application/json",
-        )
+        st.download_button(label="📥 Download log (JSON)", data=json.dumps(log, indent=2), file_name="variations_log.json", mime="application/json")
 
 
 if __name__ == "__main__":
