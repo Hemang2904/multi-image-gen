@@ -7,7 +7,7 @@ Uses ONLY Fal.ai (single API key):
 
 RUN:
   pip install streamlit fal-client Pillow requests
-  streamlit run jewelbench_streamlit.py
+  streamlit run app.py
 
 NOTE: Create .streamlit/config.toml with:
   [theme]
@@ -31,76 +31,38 @@ st.set_page_config(
 )
 
 # ============================================================================
-# CSS — Force light colors, explicit text colors everywhere
+# CSS
 # ============================================================================
 st.markdown("""
 <style>
-    /* Force light background everywhere */
     .stApp, .main, [data-testid="stAppViewContainer"] {
         background-color: #FFFFFF !important;
         color: #1a1a1a !important;
     }
-
-    /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #F8FAFC !important;
         color: #1a1a1a !important;
     }
-    section[data-testid="stSidebar"] * {
-        color: #1a1a1a !important;
-    }
-    section[data-testid="stSidebar"] .stSuccess p,
-    section[data-testid="stSidebar"] .stWarning p {
-        color: inherit !important;
-    }
+    section[data-testid="stSidebar"] * { color: #1a1a1a !important; }
 
-    /* Force ALL text to be dark */
     .stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown li,
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
     .stText, label, .stSelectbox label, .stCheckbox label,
     [data-testid="stMarkdownContainer"] p,
-    [data-testid="stMarkdownContainer"] span {
-        color: #1a1a1a !important;
-    }
+    [data-testid="stMarkdownContainer"] span { color: #1a1a1a !important; }
 
-    /* Checkbox label text — THE MAIN FIX */
-    .stCheckbox label p,
-    .stCheckbox label span,
+    .stCheckbox label p, .stCheckbox label span,
     .stCheckbox > label > div:last-child p,
     [data-testid="stCheckbox"] label p,
     [data-testid="stCheckbox"] label span,
     [data-testid="stCheckbox"] label div {
-        color: #1a1a1a !important;
-        font-size: 14px !important;
-        font-weight: 500 !important;
+        color: #1a1a1a !important; font-size: 14px !important; font-weight: 500 !important;
     }
 
-    /* Selectbox text */
-    .stSelectbox div[data-baseweb="select"] span,
-    .stSelectbox [data-testid="stMarkdownContainer"] p {
-        color: #1a1a1a !important;
-    }
-    .stSelectbox div[data-baseweb="select"] {
-        background-color: #FFFFFF !important;
-    }
+    .stSelectbox div[data-baseweb="select"] span { color: #1a1a1a !important; }
+    .stSelectbox div[data-baseweb="select"] { background-color: #FFFFFF !important; }
+    .stSlider label, .stSlider p, .stSlider span { color: #1a1a1a !important; }
 
-    /* Select slider */
-    .stSlider label, .stSlider p, .stSlider span {
-        color: #1a1a1a !important;
-    }
-
-    /* File uploader */
-    [data-testid="stFileUploader"] label p,
-    [data-testid="stFileUploader"] span {
-        color: #1a1a1a !important;
-    }
-
-    /* Expander */
-    .streamlit-expanderHeader p, .streamlit-expanderHeader span {
-        color: #1a1a1a !important;
-    }
-
-    /* Custom components */
     .main-header {
         background: linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%);
         padding: 24px 32px; border-radius: 12px; margin-bottom: 24px;
@@ -111,34 +73,14 @@ st.markdown("""
     .section-title { font-size: 18px; font-weight: 600; color: #1B3A5C !important; margin: 0 0 4px 0; }
     .section-sub { font-size: 13px; color: #4a5568 !important; margin: 0 0 16px 0; }
 
-    .param-name { font-size: 14px; font-weight: 500; color: #1a1a1a !important; display: inline; }
-    .param-count { display: inline-block; background: #DBEAFE; color: #1E40AF !important; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-left: 6px; }
-
     .detect-box { background: #F0F7FF; border: 2px solid #2E75B6; border-radius: 12px; padding: 20px 24px; margin: 16px 0; }
     .detect-type { font-size: 22px; font-weight: 700; color: #1B3A5C !important; text-transform: capitalize; }
     .detect-caption { font-size: 13px; color: #4a5568 !important; margin-top: 8px; line-height: 1.5; font-style: italic; }
 
-    .card-success { background: #F0FDF4; border: 1px solid #86EFAC; border-radius: 12px; padding: 14px 20px; margin-bottom: 12px; color: #166534 !important; }
     .blue-divider { height: 3px; background: linear-gradient(90deg, #2E75B6, transparent); border: none; border-radius: 2px; margin: 24px 0; }
-
-    .stat-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 16px; text-align: center; }
-    .stat-num { font-size: 28px; font-weight: 700; color: #2E75B6 !important; margin: 0; }
-    .stat-label { font-size: 12px; color: #64748B !important; margin: 0; }
-
-    .min-warn { background: #FEF3C7; border: 1px solid #FCD34D; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #92400E !important; }
-
-    .var-change { font-size: 12px; color: #2E75B6 !important; font-weight: 600; }
-    .var-label { font-size: 11px; color: #4a5568 !important; }
-
-    .prompt-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #374151 !important; font-family: monospace; margin: 4px 0 12px 0; line-height: 1.5; }
 
     .stProgress > div > div > div > div { background-color: #2E75B6; }
     #MainMenu, footer, header { visibility: hidden; }
-
-    /* Info/warning boxes */
-    .stInfo, .stWarning, .stError, .stSuccess {
-        color: #1a1a1a !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,7 +88,7 @@ st.markdown("""
 # ============================================================================
 # PARAMS
 # ============================================================================
-MIN_PARAMS_RULES = {10: 1, 20: 2, 30: 2, 40: 3, 50: 4}
+MIN_PARAMS_RULES = {5: 1, 10: 1, 20: 2, 30: 2, 40: 3, 50: 4}
 def get_min_params(n):
     for t in sorted(MIN_PARAMS_RULES.keys(), reverse=True):
         if n >= t: return MIN_PARAMS_RULES[t]
@@ -158,7 +100,7 @@ VALID_TYPES = ["ring", "pendant", "earring", "bangle", "necklace", "bracelet", "
 ESSENTIAL_PARAMS = {
     "ring": {
         "shank_style":      {"label": "Shank style",   "values": ["knife-edge","tapered","comfort-fit rounded","flat band","euro-shank","split-shank","twisted rope","bypass-swirl","open lattice","cathedral shank","double-rail","scalloped gallery shank","architectural ribbed","bamboo textured","braided wire"]},
-        "head_type":        {"label": "Head type",      "values": ["basket mount","cathedral","bezel frame","low-profile flush","tulip head","crown head","suspended crown","tension bridge","geometric frame","double halo head","raised pedestal","lotus head","trellis/lattice head","compass prong head","split-claw head"]},
+        "head_type":        {"label": "Head type",      "values": ["basket mount","cathedral","bezel frame","low-profile flush","crown head","suspended crown","tension bridge","geometric frame","double halo head","raised pedestal","lotus head","trellis/lattice head","compass prong head","split-claw head"]},
         "setting_type":     {"label": "Stone setting",  "values": ["4-prong claw","6-prong claw","full bezel","half bezel","tension set","channel set","micro pave","bar set","gypsy/flush set","invisible set","cathedral bezel","collet set"]},
         "stone_shape":      {"label": "Stone shape",    "values": ["round brilliant","princess cut","oval","emerald cut","cushion","pear"]},
         "metal_type":       {"label": "Metal type",     "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","14K yellow gold","sterling silver"]},
@@ -310,11 +252,15 @@ def fal_edit(fal_key, source_url, prompt):
 def build_edit_prompt(jewelry_type, param, new_value):
     component = COMPONENT_NAMES.get(param, param.replace("_", " "))
     return (
-        f"In the provided image of a {jewelry_type}, change the {component} "
-        f"to a {new_value}. "
-        f"Do not change anything else in the image. "
-        f"Keep the same angle, lighting, background, proportions, and overall design. "
-        f"Only modify the {component}."
+        f"Edit this {jewelry_type} image: replace the existing {component} "
+        f"with a {new_value}. Remove the original {component} completely and "
+        f"replace it with the new {new_value} version. "
+        f"Do not add anything on top of the existing design. "
+        f"Do not stack or layer elements. "
+        f"The result should look like the {jewelry_type} was always made with "
+        f"a {new_value} {component}. "
+        f"Keep everything else identical — same angle, lighting, background, "
+        f"proportions, metal color, and overall design."
     )
 
 def generate_variations(jtype, selected, num):
@@ -352,10 +298,10 @@ def main():
         st.markdown("1. Upload a jewelry image")
         st.markdown("2. Florence-2 detects the type")
         st.markdown("3. Tick what to vary")
-        st.markdown("4. Generate 10–50 edit variations")
+        st.markdown("4. Generate 5–50 edit variations")
         st.divider()
         st.markdown("**Min params required:**")
-        st.markdown("10 imgs → 1 param")
+        st.markdown("5-10 imgs → 1 param")
         st.markdown("20-30 imgs → 2 params")
         st.markdown("40 imgs → 3 params")
         st.markdown("50 imgs → 4 params")
@@ -424,14 +370,12 @@ def main():
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
 
-        # Detection result
         st.markdown(
             f'<div class="detect-box">'
             f'<div class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</div>'
             f'<div class="detect-caption">"{caption[:250]}{"..." if len(caption) > 250 else ""}"</div>'
             f'</div>', unsafe_allow_html=True)
 
-        # Type override
         st.markdown("**Confirm or change the detected type:**")
         jtype = st.selectbox(
             label="Jewelry type",
@@ -455,7 +399,6 @@ def main():
             meta = essential[pn]
             col = c1 if i < half else c2
             with col:
-                # Use st.checkbox with a proper visible label
                 checked = st.checkbox(
                     label=f"{meta['label']}  ({len(meta['values'])} options)",
                     key=f"cb_{jtype}_{pn}",
@@ -471,7 +414,7 @@ def main():
 
         gc1, gc2 = st.columns([1, 2])
         with gc1:
-            num = st.select_slider(label="Number of images", options=[10,20,30,40,50], value=10)
+            num = st.select_slider(label="Number of images", options=[5,10,15,20,25,30,35,40,45,50], value=10)
         with gc2:
             mn = get_min_params(num)
             if len(selected) < mn:
@@ -484,7 +427,6 @@ def main():
         if st.button("🚀 Generate Variations", type="primary", disabled=not can_gen, use_container_width=True):
             variations = generate_variations(jtype, selected, num)
 
-            # Stats
             dist = {}
             for v in variations:
                 dist[v["label"]] = dist.get(v["label"], 0) + 1
