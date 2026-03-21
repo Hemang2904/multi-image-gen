@@ -5,93 +5,282 @@ Uses ONLY Fal.ai (single API key):
   - Florence-2 Large → captioning + type detection + stone count detection
   - Flux 2 Turbo Edit → single-component image editing
 
+All prompts use JEWELRY_CONTEXT to prevent literal interpretations
+(e.g. "cathedral" = jewelry arch, NOT a building).
+
 RUN:  pip install streamlit fal-client Pillow requests
 """
 
 import streamlit as st
-import os, json, random, base64, time, re, requests
+import os
+import json
+import random
+import base64
+import time
+import requests
 from typing import Optional
 
-st.set_page_config(page_title="JewelBench — Bulk Variations", page_icon="💎", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="JewelBench — Bulk Variations",
+    page_icon="💎",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 # ============================================================================
 # CSS
 # ============================================================================
 st.markdown("""
 <style>
-    .stApp, .main, [data-testid="stAppViewContainer"] { background-color: #FFFFFF !important; color: #1a1a1a !important; }
-    section[data-testid="stSidebar"] { background-color: #F8FAFC !important; color: #1a1a1a !important; }
-    section[data-testid="stSidebar"] * { color: #1a1a1a !important; }
+    .stApp, .main, [data-testid="stAppViewContainer"] {
+        background-color: #FFFFFF !important;
+        color: #1a1a1a !important;
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #F8FAFC !important;
+        color: #1a1a1a !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #1a1a1a !important;
+    }
     .stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown li,
     .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stText, label,
-    [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] span { color: #1a1a1a !important; }
-    .stCheckbox label p, .stCheckbox label span, [data-testid="stCheckbox"] label p,
-    [data-testid="stCheckbox"] label span, [data-testid="stCheckbox"] label div {
-        color: #1a1a1a !important; font-size: 14px !important; font-weight: 500 !important;
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] span {
+        color: #1a1a1a !important;
     }
-    .stSelectbox div[data-baseweb="select"] span { color: #1a1a1a !important; }
-    .stSelectbox div[data-baseweb="select"] { background-color: #FFFFFF !important; }
-    .stSlider label, .stSlider p, .stSlider span { color: #1a1a1a !important; }
-    .main-header { background: linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%); padding: 24px 32px; border-radius: 12px; margin-bottom: 24px; }
-    .main-header h1 { color: #FFFFFF !important; font-size: 28px !important; font-weight: 600 !important; margin: 0 !important; }
-    .main-header p { color: rgba(255,255,255,0.85) !important; font-size: 14px !important; margin: 4px 0 0 0 !important; }
-    .section-title { font-size: 18px; font-weight: 600; color: #1B3A5C !important; margin: 0 0 4px 0; }
-    .section-sub { font-size: 13px; color: #4a5568 !important; margin: 0 0 16px 0; }
-    .detect-box { background: #F0F7FF; border: 2px solid #2E75B6; border-radius: 12px; padding: 20px 24px; margin: 16px 0; }
-    .detect-type { font-size: 22px; font-weight: 700; color: #1B3A5C !important; text-transform: capitalize; }
-    .detect-caption { font-size: 13px; color: #4a5568 !important; margin-top: 8px; line-height: 1.5; font-style: italic; }
-    .stone-counts { background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 8px; padding: 12px 16px; margin: 8px 0; font-size: 13px; color: #9A3412 !important; }
-    .blue-divider { height: 3px; background: linear-gradient(90deg, #2E75B6, transparent); border: none; border-radius: 2px; margin: 24px 0; }
-    .stProgress > div > div > div > div { background-color: #2E75B6; }
-    #MainMenu, footer, header { visibility: hidden; }
+    .stCheckbox label p, .stCheckbox label span,
+    [data-testid="stCheckbox"] label p,
+    [data-testid="stCheckbox"] label span,
+    [data-testid="stCheckbox"] label div {
+        color: #1a1a1a !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+    }
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #1a1a1a !important;
+    }
+    .stSelectbox div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+    }
+    .main-header {
+        background: linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%);
+        padding: 24px 32px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+    }
+    .main-header h1 {
+        color: #FFFFFF !important;
+        font-size: 28px !important;
+        font-weight: 600 !important;
+        margin: 0 !important;
+    }
+    .main-header p {
+        color: rgba(255,255,255,0.85) !important;
+        font-size: 14px !important;
+        margin: 4px 0 0 0 !important;
+    }
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1B3A5C !important;
+        margin: 0 0 4px 0;
+    }
+    .section-sub {
+        font-size: 13px;
+        color: #4a5568 !important;
+        margin: 0 0 16px 0;
+    }
+    .detect-box {
+        background: #F0F7FF;
+        border: 2px solid #2E75B6;
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin: 16px 0;
+    }
+    .detect-type {
+        font-size: 22px;
+        font-weight: 700;
+        color: #1B3A5C !important;
+        text-transform: capitalize;
+    }
+    .detect-caption {
+        font-size: 13px;
+        color: #4a5568 !important;
+        margin-top: 8px;
+        line-height: 1.5;
+        font-style: italic;
+    }
+    .stone-counts {
+        background: #FFF7ED;
+        border: 1px solid #FDBA74;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin: 8px 0;
+        font-size: 13px;
+        color: #9A3412 !important;
+    }
+    .blue-divider {
+        height: 3px;
+        background: linear-gradient(90deg, #2E75B6, transparent);
+        border: none;
+        border-radius: 2px;
+        margin: 24px 0;
+    }
+    .stProgress > div > div > div > div {
+        background-color: #2E75B6;
+    }
+    #MainMenu, footer, header {
+        visibility: hidden;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ============================================================================
+# JEWELRY CONTEXT — prefixed to ALL prompts to prevent literal interpretations
+# ============================================================================
+JEWELRY_CONTEXT = (
+    "This is a jewelry design edit. All terms are standard jewelry/goldsmith "
+    "terminology, not literal objects. For example 'cathedral' means a "
+    "cathedral-style raised metal arch, NOT an actual building. 'Basket' means "
+    "a basket-style prong mount, NOT a woven basket. 'Tension' means a "
+    "tension-style setting where metal pressure holds the stone, NOT mechanical "
+    "tension. Do NOT place any real-world objects, buildings, animals, or "
+    "literal interpretations on the jewelry. Do NOT paste or overlay anything "
+    "on top of the existing image. Every edit must look like the jewelry was "
+    "manufactured this way from the start — a single seamless piece. "
+)
+
 
 # ============================================================================
 # STONE SYSTEM
 # ============================================================================
 DIAMOND_MAIN = {
-    "setting": ["4-prong claw","6-prong claw","full bezel","half bezel","tension set","cathedral bezel","collet set","gypsy/flush set"],
-    "shape":   ["round brilliant","princess cut","oval","emerald cut","cushion","pear","marquise","radiant","asscher","heart"],
-    "style":   ["solitaire","halo","double halo","three-stone center","cluster","bezel solitaire","tension solitaire"],
-    "prong":   ["round prong","pointed/claw prong","V-prong","double prong","tab prong","button prong","tulip prong"],
+    "setting": [
+        "4-prong claw", "6-prong claw", "full bezel", "half bezel",
+        "tension set", "cathedral bezel", "collet set", "gypsy/flush set",
+    ],
+    "shape": [
+        "round brilliant", "princess cut", "oval", "emerald cut",
+        "cushion", "pear", "marquise", "radiant", "asscher", "heart",
+    ],
+    "style": [
+        "solitaire", "halo", "double halo", "three-stone center",
+        "cluster", "bezel solitaire", "tension solitaire",
+    ],
+    "prong": [
+        "round prong", "pointed/claw prong", "V-prong", "double prong",
+        "tab prong", "button prong", "tulip prong",
+    ],
 }
+
 DIAMOND_SIDE = {
-    "setting": ["channel set","pave set","bezel set","bar set","invisible set","U-cut pave"],
-    "shape":   ["round brilliant","baguette","tapered baguette","princess cut","trillion"],
-    "style":   ["pave band","channel row","eternity set","half-eternity","three-stone side pair","graduated row"],
-    "prong":   ["shared prong","fish-tail set","bright-cut pave","U-cut","scalloped set"],
+    "setting": [
+        "channel set", "pave set", "bezel set", "bar set",
+        "invisible set", "U-cut pave",
+    ],
+    "shape": [
+        "round brilliant", "baguette", "tapered baguette",
+        "princess cut", "trillion",
+    ],
+    "style": [
+        "pave band", "channel row", "eternity set", "half-eternity",
+        "three-stone side pair", "graduated row",
+    ],
+    "prong": [
+        "shared prong", "fish-tail set", "bright-cut pave",
+        "U-cut", "scalloped set",
+    ],
 }
+
 DIAMOND_ACCENT = {
-    "setting": ["micro pave","channel set","flush/gypsy set","bar set","bead set","burnish set"],
-    "shape":   ["round brilliant","single-cut round","baguette","marquise","french cut"],
-    "style":   ["scattered accent","pave trail","milgrain-set cluster","flush scattered","halo ring"],
-    "prong":   ["bead set (no prong)","micro-prong","shared prong","bright-cut"],
+    "setting": [
+        "micro pave", "channel set", "flush/gypsy set",
+        "bar set", "bead set", "burnish set",
+    ],
+    "shape": [
+        "round brilliant", "single-cut round", "baguette",
+        "marquise", "french cut",
+    ],
+    "style": [
+        "scattered accent", "pave trail", "milgrain-set cluster",
+        "flush scattered", "halo ring",
+    ],
+    "prong": [
+        "bead set (no prong)", "micro-prong", "shared prong", "bright-cut",
+    ],
 }
-COLORED_GEMSTONES = ["ruby","blue sapphire","emerald","tanzanite","morganite","aquamarine","amethyst","topaz","garnet","citrine","peridot","opal","black onyx","alexandrite","tourmaline","spinel"]
-COLORED_SIDE_GEMS = ["ruby","blue sapphire","emerald","pink sapphire","tsavorite","amethyst","yellow sapphire","orange sapphire"]
-COLORED_ACCENT_GEMS = ["ruby","blue sapphire","emerald","pink sapphire","black diamond","tsavorite","amethyst","diamond (colorless)"]
+
+COLORED_GEMSTONES = [
+    "ruby", "blue sapphire", "emerald", "aquamarine", "amethyst",
+    "topaz", "garnet", "peridot", "opal", "alexandrite",
+]
+COLORED_SIDE_GEMS = [
+    "ruby", "blue sapphire", "emerald", "pink sapphire", "amethyst",
+]
+COLORED_ACCENT_GEMS = [
+    "ruby", "blue sapphire", "emerald", "pink sapphire", "amethyst",
+]
+
 COLORED_MAIN = {
-    "setting": ["4-prong claw","6-prong claw","full bezel","half bezel","tension set","cathedral bezel","collet set","gypsy/flush set"],
-    "shape":   ["oval","emerald cut","cushion","pear","round brilliant","cabochon","marquise","trillion","sugarloaf cabochon"],
-    "style":   ["solitaire","halo","double halo","three-stone center","cluster","bezel solitaire"],
-    "prong":   ["round prong","pointed/claw prong","V-prong","double prong","tab prong","button prong"],
+    "setting": [
+        "4-prong claw", "6-prong claw", "full bezel", "half bezel",
+        "tension set", "cathedral bezel", "collet set", "gypsy/flush set",
+    ],
+    "shape": [
+        "oval", "emerald cut", "cushion", "pear", "round brilliant",
+        "cabochon", "marquise", "trillion", "sugarloaf cabochon",
+    ],
+    "style": [
+        "solitaire", "halo", "double halo", "three-stone center",
+        "cluster", "bezel solitaire",
+    ],
+    "prong": [
+        "round prong", "pointed/claw prong", "V-prong",
+        "double prong", "tab prong", "button prong",
+    ],
     "gemstone": COLORED_GEMSTONES,
 }
+
 COLORED_SIDE = {
-    "setting": ["channel set","pave set","bezel set","bar set","invisible set","U-cut pave"],
-    "shape":   ["round","baguette","tapered baguette","princess cut","trillion","oval"],
-    "style":   ["pave band","channel row","eternity set","half-eternity","three-stone side pair","graduated row","alternating color"],
-    "prong":   ["shared prong","fish-tail set","bright-cut pave","U-cut","scalloped set"],
+    "setting": [
+        "channel set", "pave set", "bezel set", "bar set",
+        "invisible set", "U-cut pave",
+    ],
+    "shape": [
+        "round", "baguette", "tapered baguette", "princess cut",
+        "trillion", "oval",
+    ],
+    "style": [
+        "pave band", "channel row", "eternity set", "half-eternity",
+        "three-stone side pair", "graduated row", "alternating color",
+    ],
+    "prong": [
+        "shared prong", "fish-tail set", "bright-cut pave",
+        "U-cut", "scalloped set",
+    ],
     "gemstone": COLORED_SIDE_GEMS,
 }
+
 COLORED_ACCENT = {
-    "setting": ["micro pave","channel set","flush/gypsy set","bar set","bead set","burnish set"],
-    "shape":   ["round","baguette","marquise","french cut","princess cut"],
-    "style":   ["scattered accent","pave trail","milgrain-set cluster","flush scattered","halo ring"],
-    "prong":   ["bead set (no prong)","micro-prong","shared prong","bright-cut"],
+    "setting": [
+        "micro pave", "channel set", "flush/gypsy set",
+        "bar set", "bead set", "burnish set",
+    ],
+    "shape": [
+        "round", "baguette", "marquise", "french cut", "princess cut",
+    ],
+    "style": [
+        "scattered accent", "pave trail", "milgrain-set cluster",
+        "flush scattered", "halo ring",
+    ],
+    "prong": [
+        "bead set (no prong)", "micro-prong", "shared prong", "bright-cut",
+    ],
     "gemstone": COLORED_ACCENT_GEMS,
 }
+
 STONE_CATEGORIES = {
     "diamond_main":   {"label": "💎 Diamond — Main Stone",    "data": DIAMOND_MAIN,   "type": "diamond",  "position": "main"},
     "diamond_side":   {"label": "💎 Diamond — Side Stones",   "data": DIAMOND_SIDE,   "type": "diamond",  "position": "side"},
@@ -101,8 +290,9 @@ STONE_CATEGORIES = {
     "colored_accent": {"label": "🟢 Colored — Accent Stones", "data": COLORED_ACCENT, "type": "colored",  "position": "accent"},
 }
 
+
 # ============================================================================
-# STYLE VALUES — 9 curated styles
+# 4 UNIVERSAL PARAMS — identical values across all 7 types
 # ============================================================================
 UNIVERSAL_STYLES = [
     "Neo-Heritage Vintage",
@@ -116,317 +306,668 @@ UNIVERSAL_STYLES = [
     "Classic",
 ]
 
+UNIVERSAL_METAL_TYPE = [
+    "18K yellow gold", "18K white gold", "18K rose gold",
+    "platinum", "sterling silver",
+]
+
+UNIVERSAL_METAL_FINISH = [
+    "high polish", "brushed matte", "satin", "hammered",
+]
+
+UNIVERSAL_DETAILING = [
+    "milgrain border", "filigree side panels", "hand engraving",
+    "rope edge", "knife edge", "scrollwork", "vine engraving",
+    "geometric etching", "diamond-cut faceting",
+]
+
+
 # ============================================================================
-# NON-STONE PARAMS
+# NON-STONE PARAMS PER TYPE
 # ============================================================================
 MIN_PARAMS_RULES = {5: 1, 10: 1, 20: 2, 30: 2, 40: 3, 50: 4}
+
+
 def get_min_params(n):
     for t in sorted(MIN_PARAMS_RULES.keys(), reverse=True):
-        if n >= t: return MIN_PARAMS_RULES[t]
+        if n >= t:
+            return MIN_PARAMS_RULES[t]
     return 1
 
-TYPE_ICONS = {"ring": "💍", "pendant": "📿", "earring": "✨", "bangle": "⭕", "necklace": "📿", "bracelet": "⛓️", "statue": "🗿"}
+
+TYPE_ICONS = {
+    "ring": "💍", "pendant": "📿", "earring": "✨", "bangle": "⭕",
+    "necklace": "📿", "bracelet": "⛓️", "statue": "🗿",
+}
 VALID_TYPES = ["ring", "pendant", "earring", "bangle", "necklace", "bracelet", "statue"]
 
 NON_STONE_PARAMS = {
     "ring": {
         "style":          {"label": "Style",          "values": UNIVERSAL_STYLES},
-        "shank_style":    {"label": "Shank style",    "values": ["knife-edge","tapered","comfort-fit rounded","flat band","euro-shank","split-shank","twisted rope","bypass-swirl","open lattice","cathedral shank","double-rail","scalloped gallery shank","architectural ribbed","bamboo textured","braided wire"]},
-        "head_type":      {"label": "Head type",       "values": ["basket mount","cathedral","bezel frame","low-profile flush","crown head","suspended crown","tension bridge","geometric frame","double halo head","raised pedestal","lotus head","trellis/lattice head","compass prong head","split-claw head"]},
-        "metal_type":     {"label": "Metal type",      "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","14K yellow gold","sterling silver"]},
-        "metal_finish":   {"label": "Metal finish",    "values": ["high polish","brushed matte","satin","hammered"]},
-        "shoulder_style": {"label": "Shoulder style",  "values": ["plain","pave-set","tapered baguette","milgrain edged"]},
-        "gallery_style":  {"label": "Gallery",         "values": ["open gallery","closed gallery","filigree gallery","hidden halo gallery","pierced gallery","scroll gallery","lattice gallery","crown gallery"]},
-        "detailing":      {"label": "Detailing",       "values": ["milgrain border","filigree side panels","hand engraving","rope edge","knife edge","scrollwork","wheat pattern","vine engraving","geometric etching","diamond-cut faceting"]},
+        "shank_style":    {"label": "Shank style",    "values": ["knife-edge", "tapered", "comfort-fit rounded", "flat band", "euro-shank", "split-shank", "twisted rope", "bypass-swirl", "open lattice", "cathedral shank", "double-rail", "architectural ribbed"]},
+        "head_type":      {"label": "Head type",      "values": ["basket mount", "cathedral", "bezel frame", "low-profile flush", "crown head", "suspended crown", "tension bridge", "geometric frame", "double halo head", "raised pedestal", "split-claw head"]},
+        "metal_type":     {"label": "Metal type",     "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":   {"label": "Metal finish",   "values": UNIVERSAL_METAL_FINISH},
+        "shoulder_style": {"label": "Shoulder style", "values": ["plain", "pave-set", "tapered baguette", "milgrain edged"]},
+        "gallery_style":  {"label": "Gallery",        "values": ["open gallery", "closed gallery", "filigree gallery", "hidden halo gallery", "pierced gallery", "lattice gallery"]},
+        "detailing":      {"label": "Detailing",      "values": UNIVERSAL_DETAILING},
     },
     "pendant": {
-        "style":          {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "pendant_shape":  {"label": "Pendant shape",   "values": ["round","oval","teardrop","heart","bar","disc","geometric hexagon","marquise silhouette","cross","star","crescent moon","kite/rhombus","shield","pear drop","octagon"]},
-        "frame_style":    {"label": "Frame style",     "values": ["open frame","closed back","halo frame","minimal wire frame","double frame","vintage scroll frame","art deco geometric frame","floating/tension frame","cage/lantern frame","bezel wrap frame"]},
-        "bail_type":      {"label": "Bail type",       "values": ["fixed bail","hidden bail","tube bail","diamond-set bail","split bail","rabbit ear bail","enhancer clip bail","hinged bail","omega bail","double loop bail"]},
-        "metal_type":     {"label": "Metal type",      "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
-        "metal_finish":   {"label": "Metal finish",    "values": ["high polish","brushed matte","satin","hammered"]},
-        "border_detail":  {"label": "Border detail",   "values": ["none","milgrain border","rope border","scalloped edge"]},
+        "style":         {"label": "Style",         "values": UNIVERSAL_STYLES},
+        "pendant_shape": {"label": "Pendant shape", "values": ["round", "oval", "teardrop", "heart", "bar", "disc", "geometric hexagon", "marquise silhouette", "cross", "star", "crescent moon", "kite/rhombus", "shield", "octagon"]},
+        "frame_style":   {"label": "Frame style",   "values": ["open frame", "closed back", "halo frame", "minimal wire frame", "double frame", "vintage scroll frame", "art deco geometric frame", "floating/tension frame", "cage/lantern frame", "bezel wrap frame"]},
+        "bail_type":     {"label": "Bail type",     "values": ["fixed bail", "hidden bail", "tube bail", "diamond-set bail", "split bail", "double loop bail"]},
+        "metal_type":    {"label": "Metal type",    "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":  {"label": "Metal finish",  "values": UNIVERSAL_METAL_FINISH},
+        "detailing":     {"label": "Detailing",     "values": UNIVERSAL_DETAILING},
     },
     "earring": {
-        "style":            {"label": "Style",          "values": UNIVERSAL_STYLES},
-        "earring_type":     {"label": "Earring type",   "values": ["stud","drop","hoop","huggie","chandelier","climber","threader","ear cuff","jacket","dangle","crawler","front-back (peek-a-boo)","shield/disc"]},
-        "silhouette_shape": {"label": "Silhouette",     "values": ["round","oval","teardrop","geometric angular","linear bar","fan/semicircle","floral cluster","abstract organic","kite/diamond","starburst","crescent","triangular","cascading tier"]},
-        "closure_type":     {"label": "Closure type",   "values": ["push back","screw back","lever back","hook/shepherd","hinged","latch back","snap post","omega clip","threader chain","ear wire with bead stop"]},
-        "frame_style":      {"label": "Frame style",    "values": ["open","closed","filigree","wire wrap","sculpted solid","cage/lantern","lattice","halo surround","art deco geometric","floating/tension"]},
-        "metal_type":       {"label": "Metal type",     "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
-        "metal_finish":     {"label": "Metal finish",   "values": ["high polish","brushed matte","satin","hammered"]},
-        "drop_length":      {"label": "Drop length",    "values": ["flush to ear (stud)","short drop (1-2cm)","medium drop (3-4cm)","long drop (5-7cm)"]},
+        "style":            {"label": "Style",        "values": UNIVERSAL_STYLES},
+        "earring_type":     {"label": "Earring type", "values": ["stud", "drop", "hoop", "huggie", "chandelier", "climber", "threader", "ear cuff", "jacket", "dangle", "crawler", "front-back (peek-a-boo)", "shield/disc"]},
+        "silhouette_shape": {"label": "Silhouette",   "values": ["round", "oval", "teardrop", "geometric angular", "linear bar", "fan/semicircle", "floral cluster", "abstract organic", "kite/diamond", "starburst", "crescent", "triangular", "cascading tier"]},
+        "closure_type":     {"label": "Closure type", "values": ["push back", "screw back", "lever back", "hook/shepherd", "hinged", "latch back", "snap post", "omega clip", "threader chain", "ear wire with bead stop"]},
+        "frame_style":      {"label": "Frame style",  "values": ["open", "closed", "filigree", "sculpted solid", "cage/lantern", "lattice", "halo surround", "art deco geometric", "floating/tension"]},
+        "metal_type":       {"label": "Metal type",   "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":     {"label": "Metal finish", "values": UNIVERSAL_METAL_FINISH},
+        "drop_length":      {"label": "Drop length",  "values": ["flush to ear (stud)", "short drop (1-2cm)", "medium drop (3-4cm)", "long drop (5-7cm)"]},
+        "detailing":        {"label": "Detailing",    "values": UNIVERSAL_DETAILING},
     },
     "bangle": {
-        "style":           {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "bangle_type":     {"label": "Bangle type",     "values": ["solid closed","hinged","open cuff","coil wrap","stacking thin","bypass cuff","expandable","mesh flex","articulated segment","snake/serpenti","torque","spring-loaded"]},
-        "closure_type":    {"label": "Closure type",    "values": ["slip-on (no clasp)","hinged with clasp","box clasp","magnetic clasp","toggle clasp","hook and eye","push-pull clasp","barrel screw","fold-over safety"]},
-        "band_width":      {"label": "Band width",      "values": ["slim (3mm)","medium (6mm)","wide (10mm)","extra wide (15mm)"]},
-        "metal_type":      {"label": "Metal type",      "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
-        "metal_finish":    {"label": "Metal finish",    "values": ["high polish","brushed matte","satin","hammered"]},
-        "surface_pattern": {"label": "Surface pattern", "values": ["none/plain","hammered texture","diamond-cut facets","twisted cable","woven/braided","bark texture","geometric etched","brushed linear","granulation","filigree overlay","herringbone"]},
-        "detailing":       {"label": "Detailing",       "values": ["milgrain edge","filigree panels","hand engraving","rope border","scalloped edge","scrollwork accents","vine pattern","geometric lattice","openwork cutouts","diamond-cut bevel"]},
+        "style":        {"label": "Style",           "values": UNIVERSAL_STYLES},
+        "bangle_type":  {"label": "Bangle type",     "values": ["solid closed", "hinged", "open cuff", "coil wrap", "stacking thin", "bypass cuff", "expandable", "mesh flex", "articulated segment"]},
+        "closure_type": {"label": "Closure type",    "values": ["slip-on (no clasp)", "hinged with clasp", "box clasp", "magnetic clasp", "toggle clasp", "hook and eye", "push-pull clasp", "barrel screw", "fold-over safety"]},
+        "band_width":   {"label": "Band width",      "values": ["slim (3mm)", "medium (6mm)", "wide (10mm)", "extra wide (15mm)"]},
+        "metal_type":   {"label": "Metal type",      "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish": {"label": "Metal finish",    "values": UNIVERSAL_METAL_FINISH},
+        "detailing":    {"label": "Detailing",       "values": UNIVERSAL_DETAILING},
     },
     "necklace": {
-        "style":           {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "necklace_type":   {"label": "Necklace type",   "values": ["chain","pendant chain","choker","station necklace","lariat/Y-chain","collar","multi-strand","statement bib","rivière","omega","festoon","rope length","layered set"]},
-        "chain_style":     {"label": "Chain style",     "values": ["cable link","box chain","curb link","rope chain","figaro","snake chain","Singapore twist","wheat chain","paperclip link","ball/bead chain","Byzantine","Venetian box","herringbone flat","mariner/anchor"]},
-        "link_shape":      {"label": "Link shape",      "values": ["round","oval","elongated rectangle","flat disc","N/A (solid chain)","textured nugget","twisted figure-8","marquise link","heart link","hammered organic","graduated sizing"]},
-        "metal_type":      {"label": "Metal type",      "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
-        "metal_finish":    {"label": "Metal finish",    "values": ["high polish","brushed matte","satin","diamond-cut faceted"]},
-        "clasp_type":      {"label": "Clasp type",      "values": ["lobster claw","spring ring","toggle","box clasp","magnetic"]},
-        "surface_texture": {"label": "Surface texture",  "values": ["smooth","hammered links","twisted links","diamond-cut facets"]},
-        "chain_thickness": {"label": "Thickness",        "values": ["delicate (0.5-1mm)","thin (1-1.5mm)","medium (2-3mm)","thick (4-5mm)"]},
+        "style":         {"label": "Style",          "values": UNIVERSAL_STYLES},
+        "necklace_type": {"label": "Necklace type",  "values": ["chain", "pendant chain", "choker", "station necklace", "lariat/Y-chain", "collar", "multi-strand"]},
+        "chain_style":   {"label": "Chain style",    "values": ["cable link", "box chain", "curb link", "rope chain", "figaro", "snake chain", "Singapore twist"]},
+        "link_shape":    {"label": "Link shape",     "values": ["round", "oval", "elongated rectangle", "flat disc", "N/A (solid chain)", "twisted figure-8", "marquise link", "heart link"]},
+        "metal_type":    {"label": "Metal type",     "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":  {"label": "Metal finish",   "values": UNIVERSAL_METAL_FINISH},
+        "clasp_type":    {"label": "Clasp type",     "values": ["lobster claw", "spring ring", "toggle", "box clasp", "magnetic"]},
+        "detailing":     {"label": "Detailing",      "values": UNIVERSAL_DETAILING},
     },
     "bracelet": {
-        "style":           {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "bracelet_type":   {"label": "Bracelet type",   "values": ["chain link","tennis","cuff","charm","bar/ID","mesh","bangle style","wrap","beaded","hinged segment","serpenti/snake","sliding/bolo","station"]},
-        "link_style":      {"label": "Link style",      "values": ["cable","curb","figaro","rope","box","N/A (solid)","Byzantine","Cuban","paperclip","mariner/anchor","wheat","herringbone","Venetian"]},
-        "closure_type":    {"label": "Closure type",    "values": ["lobster claw","toggle","box clasp","fold-over","magnetic"]},
-        "metal_type":      {"label": "Metal type",      "values": ["18K yellow gold","18K white gold","18K rose gold","platinum","sterling silver"]},
-        "metal_finish":    {"label": "Metal finish",    "values": ["high polish","brushed matte","satin","hammered"]},
-        "surface_texture": {"label": "Surface texture",  "values": ["smooth","hammered","twisted cable","braided","diamond-cut","bark texture","granulated","brushed linear","woven mesh","filigree overlay","satin matte","sandblasted"]},
-        "band_width":      {"label": "Band width",      "values": ["delicate (1-2mm)","thin (3-4mm)","medium (5-7mm)","wide (8-12mm)"]},
-        "detailing":       {"label": "Detailing",       "values": ["milgrain accents","filigree spacers","hand engraving","rope border","scalloped links","scrollwork panels","vine pattern","geometric etching","openwork segments","diamond-cut edges"]},
+        "style":         {"label": "Style",          "values": UNIVERSAL_STYLES},
+        "bracelet_type": {"label": "Bracelet type",  "values": ["chain link", "tennis", "cuff", "charm", "bar/ID", "mesh", "bangle style", "wrap", "beaded", "hinged segment"]},
+        "link_style":    {"label": "Link style",     "values": ["cable", "curb", "figaro", "rope", "box", "N/A (solid)", "Byzantine", "Cuban", "paperclip"]},
+        "closure_type":  {"label": "Closure type",   "values": ["lobster claw", "toggle", "box clasp", "fold-over", "magnetic"]},
+        "metal_type":    {"label": "Metal type",     "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":  {"label": "Metal finish",   "values": UNIVERSAL_METAL_FINISH},
+        "band_width":    {"label": "Band width",     "values": ["delicate (1-2mm)", "thin (3-4mm)", "medium (5-7mm)", "wide (8-12mm)"]},
+        "detailing":     {"label": "Detailing",      "values": UNIVERSAL_DETAILING},
     },
     "statue": {
-        "style":          {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "pose":           {"label": "Pose",            "values": ["standing upright","seated","dynamic action","meditative","contrapposto","arms raised","kneeling","reclining","dancing","warrior stance","prayer/namaste","flying/leaping","crouching"]},
-        "surface_detail": {"label": "Surface detail",  "values": ["smooth minimal","highly detailed/realistic","abstract textured","faceted geometric","organic flowing","hammered rustic","filigree overlay","bas-relief carved","weathered/eroded","crystalline fractured"]},
-        "metal_type":     {"label": "Metal type",      "values": ["sterling silver","bronze","18K yellow gold","platinum","brass"]},
-        "metal_finish":   {"label": "Metal finish",    "values": ["high polish","brushed matte","patina aged","antiqued oxidized","satin"]},
-        "base_type":      {"label": "Base type",       "values": ["flat square","round pedestal","oval plinth","natural rock","no base/freestanding"]},
+        "style":       {"label": "Style",       "values": UNIVERSAL_STYLES},
+        "metal_type":  {"label": "Metal type",  "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish":{"label": "Metal finish","values": UNIVERSAL_METAL_FINISH},
+        "base_type":   {"label": "Base type",   "values": ["flat square", "round pedestal", "oval plinth", "natural rock", "no base/freestanding"]},
+        "detailing":   {"label": "Detailing",   "values": UNIVERSAL_DETAILING},
     },
 }
 
 STONE_TYPES = ["ring", "pendant", "earring", "bangle", "necklace", "bracelet"]
 
+
 # ============================================================================
-# FAL.AI
+# FAL.AI FUNCTIONS
 # ============================================================================
+
 def fal_upload(fal_key, img_bytes):
-    import fal_client; os.environ["FAL_KEY"] = fal_key
+    import fal_client
+    os.environ["FAL_KEY"] = fal_key
     return fal_client.upload(img_bytes, "image/png")
 
+
 def fal_caption(fal_key, image_url):
-    import fal_client; os.environ["FAL_KEY"] = fal_key
-    result = fal_client.subscribe("fal-ai/florence-2-large/more-detailed-caption", arguments={"image_url": image_url})
-    return result.get("results", str(result)) if isinstance(result, dict) else str(result)
+    import fal_client
+    os.environ["FAL_KEY"] = fal_key
+    result = fal_client.subscribe(
+        "fal-ai/florence-2-large/more-detailed-caption",
+        arguments={"image_url": image_url},
+    )
+    if isinstance(result, dict):
+        return result.get("results", str(result))
+    return str(result)
+
 
 def detect_type_from_caption(caption):
     cl = caption.lower()
-    for jtype, kws in {"earring":["earring","ear ring"],"bangle":["bangle","cuff bracelet","cuff"],"bracelet":["bracelet","wristband"],"necklace":["necklace","choker"],"pendant":["pendant","locket"],"ring":["ring","band","solitaire"],"statue":["statue","figurine","sculpture"]}.items():
+    for jtype, kws in {
+        "earring": ["earring", "ear ring"],
+        "bangle":  ["bangle", "cuff bracelet", "cuff"],
+        "bracelet":["bracelet", "wristband"],
+        "necklace":["necklace", "choker"],
+        "pendant": ["pendant", "locket"],
+        "ring":    ["ring", "band", "solitaire"],
+        "statue":  ["statue", "figurine", "sculpture"],
+    }.items():
         for kw in kws:
-            if kw in cl: return jtype
+            if kw in cl:
+                return jtype
     return "ring"
+
 
 def detect_stone_counts(caption):
     cl = caption.lower()
     counts = {"main": 1, "side": 0, "accent": 0}
-    if "three-stone" in cl or "three stone" in cl: counts["main"] = 3
-    if "five-stone" in cl: counts["main"] = 5
-    if any(w in cl for w in ["side stone","side diamond","flanking"]): counts["side"] = 2
-    elif any(w in cl for w in ["channel","row of","line of"]): counts["side"] = 6
-    if any(w in cl for w in ["pave","pavé","accent","small diamond","melee","studded","encrusted"]): counts["accent"] = 12
-    elif any(w in cl for w in ["halo","surrounded by"]): counts["accent"] = 10
+    if "no stone" in cl or "plain band" in cl or "no gem" in cl:
+        counts["main"] = 0
+    if "three-stone" in cl or "three stone" in cl:
+        counts["main"] = 3
+    if "five-stone" in cl:
+        counts["main"] = 5
+    if any(w in cl for w in ["side stone", "side diamond", "flanking"]):
+        counts["side"] = 2
+    elif any(w in cl for w in ["channel", "row of", "line of"]):
+        counts["side"] = 6
+    if any(w in cl for w in ["pave", "pavé", "accent", "small diamond", "melee", "studded", "encrusted"]):
+        counts["accent"] = 12
+    elif any(w in cl for w in ["halo", "surrounded by"]):
+        counts["accent"] = 10
     if counts["side"] == 0 and counts["accent"] == 0:
-        if any(w in cl for w in ["diamonds","stones","gems"]): counts["accent"] = 6
+        if any(w in cl for w in ["diamonds", "stones", "gems"]):
+            counts["accent"] = 6
     return counts
 
+
 def fal_edit(fal_key, source_url, prompt):
-    import fal_client; os.environ["FAL_KEY"] = fal_key
-    result = fal_client.subscribe("fal-ai/flux-2/turbo/edit", arguments={
-        "image_urls": [source_url], "prompt": prompt, "num_images": 1, "num_inference_steps": 6, "guidance_scale": 15,
-    })
+    import fal_client
+    os.environ["FAL_KEY"] = fal_key
+    result = fal_client.subscribe(
+        "fal-ai/flux-2/turbo/edit",
+        arguments={
+            "image_urls": [source_url],
+            "prompt": prompt,
+            "num_images": 1,
+            "num_inference_steps": 6,
+            "guidance_scale": 15,
+        },
+    )
     if isinstance(result, dict):
         images = result.get("images", [])
-        if images and isinstance(images[0], dict): return images[0].get("url")
+        if images and isinstance(images[0], dict):
+            return images[0].get("url")
     return None
 
+
 # ============================================================================
-# PROMPT BUILDERS
+# STONE PROMPT BUILDER
 # ============================================================================
+
 def build_stone_prompt(jewelry_type, stone_cat_key, sub_aspect, new_value, counts):
+    """
+    Build stone edit prompt with:
+      - JEWELRY_CONTEXT to prevent literal interpretations
+      - Exact stone count preservation
+      - Zero-stone guard (returns None if count=0)
+      - Position isolation (main/side/accent independent)
+    """
     cat = STONE_CATEGORIES[stone_cat_key]
-    position = cat["position"]
-    count = counts.get(position, 1)
-    count_str = f"exactly {count}" if count > 0 else ""
-    pos_map = {"main": ("center/main", "Do NOT touch the side stones or accent stones. Keep them exactly as they are."),
-               "side": ("side", "Do NOT touch the center/main stone or accent stones. Keep them exactly as they are."),
-               "accent": ("accent/pave", "Do NOT touch the center/main stone or side stones. Keep them exactly as they are.")}
-    pos_desc, other_desc = pos_map[position]
-    count_note = f"Maintain {count_str} {position} stone(s) in the same positions." if count_str else ""
+    pos = cat["position"]
+    count = counts.get(pos, 0)
+
+    # Zero-stone guard
+    if count == 0:
+        return None
+
+    pos_map = {
+        "main": (
+            "center/main",
+            "Do NOT touch the side stones or accent stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
+        ),
+        "side": (
+            "side",
+            "Do NOT touch the center/main stone or accent stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
+        ),
+        "accent": (
+            "accent/pave",
+            "Do NOT touch the center/main stone or side stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
+        ),
+    }
+    pos_desc, other_desc = pos_map[pos]
+    count_note = (
+        f"The original has exactly {count} {pos} stone(s) — "
+        f"keep exactly {count}, no more, no less."
+    )
+    base = f"{JEWELRY_CONTEXT}Edit this {jewelry_type}: "
 
     prompts = {
-        "setting": f"Edit this {jewelry_type}: completely remove the existing {pos_desc} stone setting and replace it with a {new_value} setting. Stones must sit naturally inside the new setting, not stacked on top. {count_note} {other_desc} Keep the same stone type, shape, color, metal, angle, lighting, background.",
-        "shape": f"Edit this {jewelry_type}: completely remove the existing {pos_desc} stone(s) and replace with {new_value} cut stones in the exact same positions and sizes. Must sit naturally inside existing settings, not on top. {count_note} {other_desc} Keep the same metal, angle, lighting, background.",
-        "style": f"Edit this {jewelry_type}: change the {pos_desc} stone arrangement/style to a {new_value} layout. Remove existing arrangement and replace with {new_value}. {count_note} {other_desc} Keep the same metal, angle, lighting, background.",
-        "prong": f"Edit this {jewelry_type}: change the {pos_desc} stone prong/setting finish to {new_value}. {count_note} {other_desc} Keep the same stones, colors, metal, angle, lighting, background.",
-        "gemstone": f"Edit this {jewelry_type}: completely remove the existing {pos_desc} stone(s) and replace with natural {new_value} gemstone(s) in the exact same positions and sizes. Must sit naturally inside existing settings, not stacked on top. {count_note} {other_desc} Keep the same metal, settings, angle, lighting, background.",
+        "setting": (
+            f"{base}change only how the {pos_desc} stones are mounted to a "
+            f"jewelry-style {new_value} setting. The stones must sit naturally "
+            f"inside the metalwork. {count_note} {other_desc} "
+            f"Keep same stone type, shape, color, metal, angle, lighting, background."
+        ),
+        "shape": (
+            f"{base}replace the {pos_desc} stone(s) with {new_value} cut stones "
+            f"fitted naturally into the existing metal settings. "
+            f"{count_note} {other_desc} "
+            f"Keep same metal, stone color, angle, lighting, background."
+        ),
+        "style": (
+            f"{base}rearrange the {pos_desc} stones into a jewelry-style "
+            f"{new_value} layout within the existing metalwork. "
+            f"{count_note} {other_desc} "
+            f"Keep same stone type, color, metal, angle, lighting, background."
+        ),
+        "prong": (
+            f"{base}change the {pos_desc} stone prongs to jewelry-style "
+            f"{new_value}. {count_note} {other_desc} "
+            f"Keep same stones, colors, count, metal, angle, lighting, background."
+        ),
+        "gemstone": (
+            f"{base}replace the {pos_desc} stone(s) with natural {new_value} "
+            f"gemstone(s) fitted into the existing settings. "
+            f"{count_note} Do not add extra stones beyond {count}. {other_desc} "
+            f"Keep same metal, settings, angle, lighting, background."
+        ),
     }
-    return prompts.get(sub_aspect, f"Edit this {jewelry_type}: change the {pos_desc} stones.")
+    return prompts.get(sub_aspect)
 
-def build_nonstone_prompt(jewelry_type, param, new_value):
-    cnames = {"style":"overall style","shank_style":"shank","head_type":"head/crown","metal_type":"metal","metal_finish":"metal finish/surface",
-        "shoulder_style":"shoulders","gallery_style":"gallery","detailing":"detailing/ornamentation",
-        "pendant_shape":"pendant shape","frame_style":"frame","bail_type":"bail","border_detail":"border",
-        "earring_type":"earring type","silhouette_shape":"silhouette shape","closure_type":"closure/back","drop_length":"drop length",
-        "bangle_type":"bangle form","band_width":"band width","surface_pattern":"surface pattern",
-        "necklace_type":"necklace style","chain_style":"chain link style","link_shape":"link shape",
-        "clasp_type":"clasp","surface_texture":"surface texture","chain_thickness":"chain thickness",
-        "bracelet_type":"bracelet style","link_style":"link style",
-        "pose":"pose","surface_detail":"surface detail level","base_type":"base/pedestal"}
-    component = cnames.get(param, param.replace("_", " "))
 
+# ============================================================================
+# NON-STONE PROMPT BUILDER
+# ============================================================================
+
+def build_nonstone_prompt(jewelry_type, param, new_value, counts):
+    """
+    Build non-stone edit prompt with:
+      - JEWELRY_CONTEXT prefix (anti-literal, anti-overlay)
+      - Style = metalwork-only transformation
+      - Stone-aware guards (has stones / no stones)
+      - 4 random prompt variants for natural diversity
+    """
+    total_stones = sum(counts.values())
+    has_stones = total_stones > 0
+
+    cnames = {
+        "style": "overall style",
+        "shank_style": "shank",
+        "head_type": "head/crown",
+        "metal_type": "metal",
+        "metal_finish": "metal finish/surface",
+        "shoulder_style": "shoulders",
+        "gallery_style": "gallery",
+        "detailing": "detailing/ornamentation",
+        "pendant_shape": "pendant shape",
+        "frame_style": "frame",
+        "bail_type": "bail",
+        "earring_type": "earring type",
+        "silhouette_shape": "silhouette shape",
+        "closure_type": "closure/back",
+        "drop_length": "drop length",
+        "bangle_type": "bangle form",
+        "band_width": "band width",
+        "necklace_type": "necklace style",
+        "chain_style": "chain link style",
+        "link_shape": "link shape",
+        "clasp_type": "clasp",
+        "bracelet_type": "bracelet style",
+        "link_style": "link style",
+        "base_type": "base/pedestal",
+    }
+    comp = cnames.get(param, param.replace("_", " "))
+    base = f"{JEWELRY_CONTEXT}Edit this {jewelry_type}: "
+
+    # --- STYLE: metalwork only, stone-aware ---
     if param == "style":
+        stone_guard = (
+            "If the original has stones, keep the exact same stones, colors, "
+            "types, and count. Stone arrangement may adjust but use only the "
+            "same stone types already present."
+        ) if has_stones else (
+            "The original has NO stones — do NOT add any gemstones, diamonds, "
+            "or colored stones. Keep it stone-free."
+        )
         return (
-            f"Edit this {jewelry_type}: transform the metalwork and design language to a {new_value} aesthetic. "
-            f"Only modify the metal surfaces, metal patterns, metal textures, engravings, filigree, and ornamental metalwork. "
-            f"Reimagine the metalwork as if a {new_value} craftsman designed it. "
-            f"Do NOT add any new colored gemstones. Do NOT change existing stone colors. "
-            f"Do NOT replace diamonds with colored stones or colored stones with diamonds. "
-            f"If the original has diamonds, keep diamonds. If the original has colored stones, keep the same colored stones. "
-            f"Stone arrangement may be adjusted to suit the {new_value} style, but use only the same stone types already present. "
-            f"Keep the same metal color (gold stays gold, silver stays silver). "
-            f"Same angle, lighting, and background."
+            f"{base}transform the metalwork and ornamental design language to "
+            f"a {new_value} aesthetic. Only modify the metal surfaces, metal "
+            f"patterns, metal textures, engravings, filigree, and ornamental "
+            f"metalwork. Reimagine the metalwork as if a {new_value} craftsman "
+            f"designed it. Do NOT add any new colored gemstones. Do NOT change "
+            f"existing stone colors. Do NOT replace diamonds with colored stones "
+            f"or vice versa. {stone_guard} Keep same metal color (gold stays "
+            f"gold, silver stays silver). Same angle, lighting, and background."
         )
 
-    return (
-        f"Edit this {jewelry_type}: replace the existing {component} with a {new_value}. "
-        f"Remove the original {component} completely and replace with {new_value}. "
-        f"Do not stack or layer. Do not change any stones, gemstones, or stone colors. "
-        f"The result should look like the {jewelry_type} was always made with a {new_value} {component}. "
-        f"Keep everything else identical — same angle, lighting, background, proportions, stones, overall design."
+    # --- ALL OTHER PARAMS: 4 random variants ---
+    stone_guard = (
+        "Do not change any stones, gemstones, stone colors, or stone count."
+    ) if has_stones else (
+        "Do not add any stones or gemstones. Keep stone-free."
     )
+
+    variants = [
+        (
+            f"{base}modify the {comp} to a jewelry-style {new_value}. "
+            f"This is a goldsmith term — reshape the metal to create a "
+            f"{new_value} {comp}. The edit must blend seamlessly into the "
+            f"existing piece as if it was always made this way. "
+            f"{stone_guard} Keep everything else identical — same angle, "
+            f"lighting, background, proportions, metal color."
+        ),
+        (
+            f"{base}redesign the {comp} as a jewelry-style {new_value}. "
+            f"Integrate the {new_value} {comp} naturally into the existing "
+            f"metalwork — no overlays, no pasting. It must look like a single "
+            f"manufactured piece, not a composite. "
+            f"{stone_guard} Preserve same angle, lighting, background, "
+            f"proportions, metal color, silhouette."
+        ),
+        (
+            f"{base}replace the {comp} with a {new_value} version using "
+            f"standard jewelry fabrication. The {new_value} {comp} should be "
+            f"part of the metal body, not placed on top. No floating elements, "
+            f"no stacking, no literal object placement. "
+            f"{stone_guard} Same angle, lighting, background, metal color, "
+            f"proportions."
+        ),
+        (
+            f"{base}change the {comp} to {new_value} in the jewelry/goldsmith "
+            f"sense. Reshape the existing metal to form a {new_value} {comp} — "
+            f"it must be integrated into the band/body. Do not place any object "
+            f"or element on top of the jewelry. "
+            f"{stone_guard} Everything else stays exactly the same."
+        ),
+    ]
+    return random.choice(variants)
+
 
 # ============================================================================
 # VARIATION GENERATORS
 # ============================================================================
-def gen_stone_var(jtype, key, counts):
-    cat = STONE_CATEGORIES[key]; data = cat["data"]
-    sub = random.choice(list(data.keys())); val = random.choice(data[sub])
-    prompt = build_stone_prompt(jtype, key, sub, val, counts)
-    lbl = f"{cat['label']} {sub.capitalize()} → {val}" if sub != "gemstone" else f"{cat['label']} → {val}"
-    return {"prompt": prompt, "label": lbl, "new": val, "sub": sub}
 
-def gen_nonstone_var(jtype, param, pdict):
+def gen_stone_var(jtype, key, counts):
+    cat = STONE_CATEGORIES[key]
+    data = cat["data"]
+    for _ in range(10):
+        sub = random.choice(list(data.keys()))
+        val = random.choice(data[sub])
+        prompt = build_stone_prompt(jtype, key, sub, val, counts)
+        if prompt is not None:
+            if sub != "gemstone":
+                lbl = f"{cat['label']} {sub.capitalize()} → {val}"
+            else:
+                lbl = f"{cat['label']} → {val}"
+            return {"prompt": prompt, "label": lbl, "new": val, "sub": sub}
+    return None
+
+
+def gen_nonstone_var(jtype, param, pdict, counts):
     val = random.choice(pdict[param]["values"])
-    return {"prompt": build_nonstone_prompt(jtype, param, val), "label": f"{pdict[param]['label']} → {val}", "new": val, "sub": param}
+    prompt = build_nonstone_prompt(jtype, param, val, counts)
+    return {
+        "prompt": prompt,
+        "label": f"{pdict[param]['label']} → {val}",
+        "new": val,
+        "sub": param,
+    }
+
 
 def gen_all(jtype, sel_ns, sel_st, num, counts):
     sources = [("ns", p) for p in sel_ns] + [("st", s) for s in sel_st]
     variations, used, idx, att = [], set(), 0, 0
-    while len(variations) < num and att < num * 10:
-        att += 1; stype, skey = sources[idx % len(sources)]; idx += 1
-        v = gen_nonstone_var(jtype, skey, NON_STONE_PARAMS[jtype]) if stype == "ns" else gen_stone_var(jtype, skey, counts)
+    while len(variations) < num and att < num * 15:
+        att += 1
+        stype, skey = sources[idx % len(sources)]
+        idx += 1
+        if stype == "ns":
+            v = gen_nonstone_var(jtype, skey, NON_STONE_PARAMS[jtype], counts)
+        else:
+            v = gen_stone_var(jtype, skey, counts)
+        if v is None:
+            continue
         key = (skey, v["sub"], v["new"])
-        if key in used and att < num * 3: continue
-        used.add(key); v["index"] = len(variations) + 1; variations.append(v)
+        if key in used and att < num * 5:
+            continue
+        used.add(key)
+        v["index"] = len(variations) + 1
+        variations.append(v)
     return variations
 
+
 # ============================================================================
-# MAIN
+# MAIN APP
 # ============================================================================
+
 def main():
+    # ---- SIDEBAR ----
     with st.sidebar:
         st.markdown("## 🔑 Fal.ai API Key")
-        fal_key = st.text_input(label="Fal.ai API Key", type="password", placeholder="Your FAL_KEY...", help="https://fal.ai/dashboard/keys")
-        if fal_key: st.success("API key set", icon="✅")
-        else: st.warning("API key required", icon="⚠️")
+        fal_key = st.text_input(
+            label="Fal.ai API Key",
+            type="password",
+            placeholder="Your FAL_KEY...",
+            help="https://fal.ai/dashboard/keys",
+        )
+        if fal_key:
+            st.success("API key set", icon="✅")
+        else:
+            st.warning("API key required", icon="⚠️")
+
         st.divider()
         st.markdown("## 💎 Stone Options")
         st.markdown("**Diamond:** Main · Side · Accent")
         st.markdown("**Colored:** Main · Side · Accent")
-        st.markdown("Each varies: setting, shape, style, prong")
-        st.markdown("Colored also: gemstone type")
+
         st.divider()
-        st.markdown("## 🎨 Style = Metalwork")
-        st.markdown("Style changes only affect metal patterns, textures, and ornamentation. Stones stay exactly as they are.")
-        st.divider()
-        st.markdown("Florence-2 detects stone counts → preserved in edits")
+        st.markdown("## 🔒 Smart rules")
+        st.markdown("• All terms = jewelry terminology")
+        st.markdown("• No literal objects placed on ring")
+        st.markdown("• Stone count=0 → won't add stones")
+        st.markdown("• Style → only changes metalwork")
+        st.markdown("• 4 prompt variants per generation")
 
-    st.markdown('<div class="main-header"><h1>💎 JewelBench — Bulk Variation Generator</h1><p>Upload → detect → select → generate precise edits — all via Fal.ai</p></div>', unsafe_allow_html=True)
+    # ---- HEADER ----
+    st.markdown(
+        '<div class="main-header">'
+        '<h1>💎 JewelBench — Bulk Variation Generator</h1>'
+        '<p>Upload → detect → select → generate precise edits — all via Fal.ai</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-    for k, d in [("analysis", None), ("source_bytes", None), ("fal_url", None), ("generated", []), ("stone_counts", {"main":1,"side":0,"accent":0})]:
-        if k not in st.session_state: st.session_state[k] = d
+    # ---- SESSION STATE ----
+    for k, d in [
+        ("analysis", None),
+        ("source_bytes", None),
+        ("fal_url", None),
+        ("generated", []),
+        ("stone_counts", {"main": 1, "side": 0, "accent": 0}),
+    ]:
+        if k not in st.session_state:
+            st.session_state[k] = d
 
-    # STEP 1
-    st.markdown('<p class="section-title">Step 1 — Upload source image</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-sub">Upload a jewelry photo. Florence-2 detects type + stone counts.</p>', unsafe_allow_html=True)
+    # ================================================================
+    # STEP 1: Upload
+    # ================================================================
+    st.markdown(
+        '<p class="section-title">Step 1 — Upload source image</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="section-sub">Upload a jewelry photo. Florence-2 detects type + stone counts.</p>',
+        unsafe_allow_html=True,
+    )
+
     col_up, col_prev = st.columns([1, 1])
-    with col_up: uploaded = st.file_uploader(label="Upload jewelry image", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
+    with col_up:
+        uploaded = st.file_uploader(
+            label="Upload jewelry image",
+            type=["png", "jpg", "jpeg", "webp"],
+            label_visibility="collapsed",
+        )
     with col_prev:
-        if uploaded: st.image(uploaded, caption="Source image", width=280)
-        elif st.session_state.source_bytes: st.image(st.session_state.source_bytes, caption="Source image", width=280)
-    if not fal_key: st.info("👈 Enter your Fal.ai API key in the sidebar.")
+        if uploaded:
+            st.image(uploaded, caption="Source image", width=280)
+        elif st.session_state.source_bytes:
+            st.image(st.session_state.source_bytes, caption="Source image", width=280)
+
+    if not fal_key:
+        st.info("👈 Enter your Fal.ai API key in the sidebar.")
+
     if st.button("🔍 Analyze Image", type="primary", disabled=not (uploaded and fal_key)):
-        img_bytes = uploaded.getvalue(); st.session_state.source_bytes = img_bytes; st.session_state.generated = []; st.session_state.analysis = None
+        img_bytes = uploaded.getvalue()
+        st.session_state.source_bytes = img_bytes
+        st.session_state.generated = []
+        st.session_state.analysis = None
+
         with st.spinner("☁️ Uploading..."):
-            try: st.session_state.fal_url = fal_upload(fal_key, img_bytes)
-            except Exception as e: st.error(f"Upload failed: {e}"); st.stop()
+            try:
+                st.session_state.fal_url = fal_upload(fal_key, img_bytes)
+            except Exception as e:
+                st.error(f"Upload failed: {e}")
+                st.stop()
+
         with st.spinner("🔍 Detecting..."):
             try:
                 caption = str(fal_caption(fal_key, st.session_state.fal_url))
-                st.session_state.analysis = {"type": detect_type_from_caption(caption), "caption": caption}
+                st.session_state.analysis = {
+                    "type": detect_type_from_caption(caption),
+                    "caption": caption,
+                }
                 st.session_state.stone_counts = detect_stone_counts(caption)
-            except Exception as e: st.error(f"Detection failed: {e}"); st.stop()
+            except Exception as e:
+                st.error(f"Detection failed: {e}")
+                st.stop()
+
         st.rerun()
 
-    # STEP 2
+    # ================================================================
+    # STEP 2: Detection + Selection
+    # ================================================================
     if st.session_state.analysis:
-        a = st.session_state.analysis; auto_type = a["type"]; caption = a.get("caption",""); counts = st.session_state.stone_counts
+        a = st.session_state.analysis
+        auto_type = a["type"]
+        caption = a.get("caption", "")
+        counts = st.session_state.stone_counts
+
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="detect-box"><div class="detect-type">{TYPE_ICONS.get(auto_type,"💎")} Auto-detected: {auto_type}</div><div class="detect-caption">"{caption[:250]}{"..." if len(caption)>250 else ""}"</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="stone-counts">🔢 <b>Stone counts:</b> Main: {counts["main"]} · Side: {counts["side"]} · Accent: {counts["accent"]} — preserved in edits</div>', unsafe_allow_html=True)
+
+        st.markdown(
+            f'<div class="detect-box">'
+            f'<div class="detect-type">{TYPE_ICONS.get(auto_type, "💎")} Auto-detected: {auto_type}</div>'
+            f'<div class="detect-caption">"{caption[:250]}{"..." if len(caption) > 250 else ""}"</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            f'<div class="stone-counts">'
+            f'🔢 <b>Stone counts:</b> Main: {counts["main"]} · Side: {counts["side"]} · '
+            f'Accent: {counts["accent"]} — preserved in edits. Count=0 means no stones will be added.'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
         st.markdown("**Confirm or change type:**")
-        jtype = st.selectbox(label="Jewelry type", options=VALID_TYPES, index=VALID_TYPES.index(auto_type), format_func=lambda x: f"{TYPE_ICONS.get(x,'💎')} {x.capitalize()}")
+        jtype = st.selectbox(
+            label="Jewelry type",
+            options=VALID_TYPES,
+            index=VALID_TYPES.index(auto_type),
+            format_func=lambda x: f"{TYPE_ICONS.get(x, '💎')} {x.capitalize()}",
+        )
+
         ns = NON_STONE_PARAMS.get(jtype, {})
 
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<p class="section-title">Step 2 — Select what to change</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="section-title">Step 2 — Select what to change</p>',
+            unsafe_allow_html=True,
+        )
 
+        # Non-stone params
         st.markdown("**⚙️ Structure / Metal / Style / Detail:**")
-        pnames = list(ns.keys()); half = (len(pnames)+1)//2; c1, c2 = st.columns(2); sel_ns = []
+        pnames = list(ns.keys())
+        half = (len(pnames) + 1) // 2
+        c1, c2 = st.columns(2)
+        sel_ns = []
         for i, pn in enumerate(pnames):
-            m = ns[pn]; col = c1 if i < half else c2
+            m = ns[pn]
+            col = c1 if i < half else c2
             with col:
-                if st.checkbox(label=f"{m['label']}  ({len(m['values'])} options)", key=f"cb_{jtype}_{pn}"): sel_ns.append(pn)
+                if st.checkbox(
+                    label=f"{m['label']}  ({len(m['values'])} options)",
+                    key=f"cb_{jtype}_{pn}",
+                ):
+                    sel_ns.append(pn)
 
+        # Stone params
         sel_st = []
         if jtype in STONE_TYPES:
             st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
+
             st.markdown("**💎 Diamond stones:**")
             dc1, dc2, dc3 = st.columns(3)
             with dc1:
-                if st.checkbox(label="💎 Diamond Main (32 sub)", key="cb_dm"): sel_st.append("diamond_main")
+                if st.checkbox(label="💎 Diamond Main (32 sub)", key="cb_dm"):
+                    sel_st.append("diamond_main")
             with dc2:
-                if st.checkbox(label="💎 Diamond Side (22 sub)", key="cb_ds"): sel_st.append("diamond_side")
+                if st.checkbox(label="💎 Diamond Side (22 sub)", key="cb_ds"):
+                    sel_st.append("diamond_side")
             with dc3:
-                if st.checkbox(label="💎 Diamond Accent (20 sub)", key="cb_da"): sel_st.append("diamond_accent")
+                if st.checkbox(label="💎 Diamond Accent (20 sub)", key="cb_da"):
+                    sel_st.append("diamond_accent")
+
             st.markdown("**🔴 Colored stones:**")
             cc1, cc2, cc3 = st.columns(3)
             with cc1:
-                if st.checkbox(label="🔴 Colored Main (45 sub)", key="cb_cm"): sel_st.append("colored_main")
+                if st.checkbox(label="🔴 Colored Main (39 sub)", key="cb_cm"):
+                    sel_st.append("colored_main")
             with cc2:
-                if st.checkbox(label="🔵 Colored Side (32 sub)", key="cb_cs"): sel_st.append("colored_side")
+                if st.checkbox(label="🔵 Colored Side (27 sub)", key="cb_cs"):
+                    sel_st.append("colored_side")
             with cc3:
-                if st.checkbox(label="🟢 Colored Accent (26 sub)", key="cb_ca"): sel_st.append("colored_accent")
+                if st.checkbox(label="🟢 Colored Accent (24 sub)", key="cb_ca"):
+                    sel_st.append("colored_accent")
 
-        # STEP 3
+        # ============================================================
+        # STEP 3: Generate
+        # ============================================================
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<p class="section-title">Step 3 — Generate</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="section-title">Step 3 — Generate</p>',
+            unsafe_allow_html=True,
+        )
+
         total = len(sel_ns) + len(sel_st)
         gc1, gc2 = st.columns([1, 2])
         with gc1:
-            num = st.number_input(label="Number of images", min_value=5, max_value=50, value=10, step=1)
+            num = st.number_input(
+                label="Number of images",
+                min_value=5,
+                max_value=50,
+                value=10,
+                step=1,
+            )
         with gc2:
             mn = get_min_params(num)
-            if total < mn: st.warning(f"Select at least {mn} param(s) for {num} images. You have {total}.")
-            else: st.success(f"{total} selected — ready for {num} images")
+            if total < mn:
+                st.warning(
+                    f"Select at least {mn} param(s) for {num} images. You have {total}."
+                )
+            else:
+                st.success(f"{total} selected — ready for {num} images")
+
         can = total >= mn and bool(fal_key) and st.session_state.fal_url
-        if st.button("🚀 Generate Variations", type="primary", disabled=not can, use_container_width=True):
+
+        if st.button(
+            "🚀 Generate Variations",
+            type="primary",
+            disabled=not can,
+            use_container_width=True,
+        ):
             variations = gen_all(jtype, sel_ns, sel_st, num, counts)
+
+            # Distribution stats
             dist = {}
             for v in variations:
                 cat = v["label"].split(" → ")[0] if " → " in v["label"] else v["label"]
@@ -434,34 +975,80 @@ def main():
             scols = st.columns(min(len(dist), 5))
             for i, (lb, ct) in enumerate(sorted(dist.items(), key=lambda x: -x[1])):
                 if i < 5:
-                    with scols[i]: st.metric(label=lb[:25], value=ct)
+                    with scols[i]:
+                        st.metric(label=lb[:25], value=ct)
+
+            # Plan
             with st.expander("📋 Plan & prompts"):
-                for v in variations: st.markdown(f"**{v['index']}.** {v['label']}"); st.code(v["prompt"], language=None)
-            prog = st.progress(0, text="Starting..."); gen = []
+                for v in variations:
+                    st.markdown(f"**{v['index']}.** {v['label']}")
+                    st.code(v["prompt"], language=None)
+
+            # Generate images
+            prog = st.progress(0, text="Starting...")
+            gen = []
             for i, v in enumerate(variations):
-                prog.progress((i+1)/len(variations), text=f"{i+1}/{len(variations)}: {v['label'][:50]}")
+                prog.progress(
+                    (i + 1) / len(variations),
+                    text=f"{i + 1}/{len(variations)}: {v['label'][:50]}",
+                )
                 try:
                     url = fal_edit(fal_key, st.session_state.fal_url, v["prompt"])
                     if url:
                         ir = requests.get(url, timeout=60)
-                        gen.append({"bytes": ir.content, "label": v["label"], "new": v["new"], "url": url, "prompt": v["prompt"]})
-                except Exception as e: st.warning(f"#{i+1} failed: {e}")
-                if i < len(variations)-1: time.sleep(0.5)
-            prog.empty(); st.session_state.generated = gen; st.success(f"✅ Generated {len(gen)}/{len(variations)} images")
+                        gen.append({
+                            "bytes": ir.content,
+                            "label": v["label"],
+                            "new": v["new"],
+                            "url": url,
+                            "prompt": v["prompt"],
+                        })
+                except Exception as e:
+                    st.warning(f"#{i + 1} failed: {e}")
+                if i < len(variations) - 1:
+                    time.sleep(0.5)
 
-    # STEP 4
+            prog.empty()
+            st.session_state.generated = gen
+            st.success(f"✅ Generated {len(gen)}/{len(variations)} images")
+
+    # ================================================================
+    # STEP 4: Results
+    # ================================================================
     if st.session_state.generated:
         st.markdown('<div class="blue-divider"></div>', unsafe_allow_html=True)
-        st.markdown('<p class="section-title">Results</p>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="section-title">Results</p>',
+            unsafe_allow_html=True,
+        )
+
         imgs = st.session_state.generated
         for rs in range(0, len(imgs), 4):
             cols = st.columns(4)
             for j in range(4):
-                ix = rs+j
+                ix = rs + j
                 if ix < len(imgs):
-                    with cols[j]: st.image(imgs[ix]["bytes"], use_container_width=True); st.markdown(f"**{imgs[ix]['label']}**")
-        log = [{"label":i["label"],"new":i["new"],"url":i["url"],"prompt":i["prompt"]} for i in imgs]
-        st.download_button(label="📥 Download log (JSON)", data=json.dumps(log, indent=2), file_name="variations_log.json", mime="application/json")
+                    im = imgs[ix]
+                    with cols[j]:
+                        st.image(im["bytes"], use_container_width=True)
+                        st.markdown(f"**{im['label']}**")
+
+        log = [
+            {
+                "label": i["label"],
+                "new": i["new"],
+                "url": i["url"],
+                "prompt": i["prompt"],
+            }
+            for i in imgs
+        ]
+        st.download_button(
+            label="📥 Download log (JSON)",
+            data=json.dumps(log, indent=2),
+            file_name="variations_log.json",
+            mime="application/json",
+        )
+
 
 if __name__ == "__main__":
     main()
