@@ -286,7 +286,7 @@ STONE_CATEGORIES = {
 
 
 # ============================================================================
-# 4 UNIVERSAL PARAMS
+# 4 UNIVERSAL PARAMS — identical values across all 7 types
 # ============================================================================
 UNIVERSAL_STYLES = [
     "Neo-Heritage Vintage",
@@ -318,7 +318,6 @@ UNIVERSAL_DETAILING = [
 # ============================================================================
 # NON-STONE PARAMS PER TYPE
 # ============================================================================
-
 TYPE_ICONS = {
     "ring": "💍", "pendant": "📿", "earring": "✨", "bangle": "⭕",
     "necklace": "📿", "bracelet": "⛓️", "statue": "🗿",
@@ -357,13 +356,13 @@ NON_STONE_PARAMS = {
         "detailing":        {"label": "Detailing",    "values": UNIVERSAL_DETAILING},
     },
     "bangle": {
-        "style":        {"label": "Style",           "values": UNIVERSAL_STYLES},
-        "bangle_type":  {"label": "Bangle type",     "values": ["solid closed", "hinged", "open cuff", "coil wrap", "stacking thin", "bypass cuff", "expandable", "mesh flex", "articulated segment"]},
-        "closure_type": {"label": "Closure type",    "values": ["slip-on (no clasp)", "hinged with clasp", "box clasp", "magnetic clasp", "toggle clasp", "hook and eye", "push-pull clasp", "barrel screw", "fold-over safety"]},
-        "band_width":   {"label": "Band width",      "values": ["slim (3mm)", "medium (6mm)", "wide (10mm)", "extra wide (15mm)"]},
-        "metal_type":   {"label": "Metal type",      "values": UNIVERSAL_METAL_TYPE},
-        "metal_finish": {"label": "Metal finish",    "values": UNIVERSAL_METAL_FINISH},
-        "detailing":    {"label": "Detailing",       "values": UNIVERSAL_DETAILING},
+        "style":        {"label": "Style",         "values": UNIVERSAL_STYLES},
+        "bangle_type":  {"label": "Bangle type",   "values": ["solid closed", "hinged", "open cuff", "coil wrap", "stacking thin", "bypass cuff", "expandable", "mesh flex", "articulated segment"]},
+        "closure_type": {"label": "Closure type",  "values": ["slip-on (no clasp)", "hinged with clasp", "box clasp", "magnetic clasp", "toggle clasp", "hook and eye", "push-pull clasp", "barrel screw", "fold-over safety"]},
+        "band_width":   {"label": "Band width",    "values": ["slim (3mm)", "medium (6mm)", "wide (10mm)", "extra wide (15mm)"]},
+        "metal_type":   {"label": "Metal type",    "values": UNIVERSAL_METAL_TYPE},
+        "metal_finish": {"label": "Metal finish",  "values": UNIVERSAL_METAL_FINISH},
+        "detailing":    {"label": "Detailing",     "values": UNIVERSAL_DETAILING},
     },
     "necklace": {
         "style":         {"label": "Style",          "values": UNIVERSAL_STYLES},
@@ -488,39 +487,33 @@ def build_stone_prompt(jewelry_type, stone_cat_key, sub_aspect, new_value, count
     pos = cat["position"]
     count = counts.get(pos, 0)
 
-    # Make sure we only forbid adding stones to the OTHER positions, 
-    # otherwise it contradicts our instruction to add stones here.
+    if count == 0:
+        return None
+
     pos_map = {
         "main": (
             "center/main",
-            "Do NOT touch side or accent stones. Do NOT add new side or accent stones.",
+            "Do NOT touch the side stones or accent stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
         ),
         "side": (
             "side",
-            "Do NOT touch the center/main stone or accent stones. Do NOT add new center or accent stones.",
+            "Do NOT touch the center/main stone or accent stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
         ),
         "accent": (
             "accent/pave",
-            "Do NOT touch the center/main stone or side stones. Do NOT add new center or side stones.",
+            "Do NOT touch the center/main stone or side stones. Keep them exactly as they are. "
+            "Do NOT add any new stones that don't already exist.",
         ),
     }
     pos_desc, other_desc = pos_map[pos]
+    count_note = (
+        f"The original has exactly {count} {pos} stone(s) — "
+        f"keep exactly {count}, no more, no less."
+    )
     base = f"{JEWELRY_CONTEXT}Edit this {jewelry_type}: "
 
-    # --- LOGIC FOR ADDING STONES (Count == 0) ---
-    if count == 0:
-        add_note = f"The original currently has NO {pos} stones. You must ADD new {pos} stones seamlessly into the metal body."
-        prompts = {
-            "setting": f"{base}add new {pos_desc} stones using a {new_value} setting into the metalwork. {add_note} {other_desc} Keep same angle, lighting, background.",
-            "shape": f"{base}add new {new_value} cut {pos_desc} stones into the metalwork. {add_note} {other_desc} Keep same metal, angle, lighting.",
-            "style": f"{base}add new {pos_desc} stones in a {new_value} layout. {add_note} {other_desc} Keep same metal, angle, lighting.",
-            "prong": f"{base}add new {pos_desc} stones secured with {new_value} prongs. {add_note} {other_desc} Keep same metal, angle.",
-            "gemstone": f"{base}add new natural {new_value} {pos_desc} stones. {add_note} {other_desc} Keep same metal, angle, lighting.",
-        }
-        return prompts.get(sub_aspect)
-
-    # --- LOGIC FOR MODIFYING EXISTING STONES (Count > 0) ---
-    count_note = f"The original has exactly {count} {pos} stone(s) — keep exactly {count}, no more, no less."
     prompts = {
         "setting": (
             f"{base}change only how the {pos_desc} stones are mounted to a "
@@ -548,7 +541,7 @@ def build_stone_prompt(jewelry_type, stone_cat_key, sub_aspect, new_value, count
         "gemstone": (
             f"{base}replace the {pos_desc} stone(s) with natural {new_value} "
             f"gemstone(s) fitted into the existing settings. "
-            f"{count_note} {other_desc} "
+            f"{count_note} Do not add extra stones beyond {count}. {other_desc} "
             f"Keep same metal, settings, angle, lighting, background."
         ),
     }
@@ -592,7 +585,7 @@ def build_nonstone_prompt(jewelry_type, param, new_value, counts):
     comp = cnames.get(param, param.replace("_", " "))
     base = f"{JEWELRY_CONTEXT}Edit this {jewelry_type}: "
 
-    # --- STYLE: metalwork only, stone-aware ---
+    # --- STYLE ---
     if param == "style":
         stone_guard = (
             "If the original has stones, keep the exact same stones, colors, "
@@ -613,7 +606,7 @@ def build_nonstone_prompt(jewelry_type, param, new_value, counts):
             f"gold, silver stays silver). Same angle, lighting, and background."
         )
 
-    # --- ALL OTHER PARAMS: 4 random variants ---
+    # --- ALL OTHER PARAMS ---
     stone_guard = (
         "Do not change any stones, gemstones, stone colors, or stone count."
     ) if has_stones else (
@@ -657,52 +650,56 @@ def build_nonstone_prompt(jewelry_type, param, new_value, counts):
 
 
 # ============================================================================
-# NEW VARIATION GENERATOR (No loops, zero duplicates mathematically guaranteed)
+# VARIATION GENERATORS
 # ============================================================================
 
+def gen_stone_var(jtype, key, counts):
+    cat = STONE_CATEGORIES[key]
+    data = cat["data"]
+    for _ in range(10):
+        sub = random.choice(list(data.keys()))
+        val = random.choice(data[sub])
+        prompt = build_stone_prompt(jtype, key, sub, val, counts)
+        if prompt is not None:
+            if sub != "gemstone":
+                lbl = f"{cat['label']} {sub.capitalize()} → {val}"
+            else:
+                lbl = f"{cat['label']} → {val}"
+            return {"prompt": prompt, "label": lbl, "new": val, "sub": sub}
+    return None
+
+
+def gen_nonstone_var(jtype, param, pdict, counts):
+    val = random.choice(pdict[param]["values"])
+    prompt = build_nonstone_prompt(jtype, param, val, counts)
+    return {
+        "prompt": prompt,
+        "label": f"{pdict[param]['label']} → {val}",
+        "new": val,
+        "sub": param,
+    }
+
+
 def gen_all(jtype, sel_ns, sel_st, num, counts):
-    """
-    Builds a flat pool of ALL possible unique prompt combinations based on selections,
-    shuffles them, and pulls out exactly `num` items. No duplicates allowed.
-    """
-    pool = []
-
-    # 1. Gather all unique non-stone options
-    for pn in sel_ns:
-        for val in NON_STONE_PARAMS[jtype][pn]["values"]:
-            prompt = build_nonstone_prompt(jtype, pn, val, counts)
-            pool.append({
-                "prompt": prompt,
-                "label": f"{NON_STONE_PARAMS[jtype][pn]['label']} → {val}",
-                "new": val,
-                "sub": pn
-            })
-
-    # 2. Gather all stone options (Allows adding even if counts == 0)
-    for skey in sel_st:
-        cat = STONE_CATEGORIES[skey]
-        for sub, values in cat["data"].items():
-            for val in values:
-                prompt = build_stone_prompt(jtype, skey, sub, val, counts)
-                if prompt:
-                    if sub != "gemstone":
-                        lbl = f"{cat['label']} {sub.capitalize()} → {val}"
-                    else:
-                        lbl = f"{cat['label']} → {val}"
-                    pool.append({
-                        "prompt": prompt,
-                        "label": lbl,
-                        "new": val,
-                        "sub": sub
-                    })
-
-    sample_size = min(num, len(pool))
-    selected_variations = random.sample(pool, sample_size)
-
-    for i, v in enumerate(selected_variations):
-        v["index"] = i + 1
-
-    return selected_variations
+    sources = [("ns", p) for p in sel_ns] + [("st", s) for s in sel_st]
+    variations, used, idx, att = [], set(), 0, 0
+    while len(variations) < num and att < num * 15:
+        att += 1
+        stype, skey = sources[idx % len(sources)]
+        idx += 1
+        if stype == "ns":
+            v = gen_nonstone_var(jtype, skey, NON_STONE_PARAMS[jtype], counts)
+        else:
+            v = gen_stone_var(jtype, skey, counts)
+        if v is None:
+            continue
+        key = (skey, v["sub"], v["new"])
+        if key in used and att < num * 5:
+            continue
+        used.add(key)
+        v["index"] = len(variations) + 1
+        variations.append(v)
+    return variations
 
 
 # ============================================================================
@@ -733,9 +730,9 @@ def main():
         st.markdown("## 🔒 Smart rules")
         st.markdown("• All terms = jewelry terminology")
         st.markdown("• No literal objects placed on ring")
-        st.markdown("• Stone count=0 → will command AI to add stones")
+        st.markdown("• Stone count=0 → won't add stones")
         st.markdown("• Style → only changes metalwork")
-        st.markdown("• Mathematical guarantee of no duplicate variations")
+        st.markdown("• 4 prompt variants per generation")
 
     # ---- HEADER ----
     st.markdown(
@@ -834,7 +831,7 @@ def main():
         st.markdown(
             f'<div class="stone-counts">'
             f'🔢 <b>Stone counts:</b> Main: {counts["main"]} · Side: {counts["side"]} · '
-            f'Accent: {counts["accent"]} — preserved in edits. Selecting a stone with count 0 will prompt the AI to ADD stones.'
+            f'Accent: {counts["accent"]} — preserved in edits. Count=0 means no stones will be added.'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -909,36 +906,35 @@ def main():
             unsafe_allow_html=True,
         )
 
-        # Calculate exact number of unique value options selected
+        # Calculate Total Available Options dynamically
         total_options = 0
         for pn in sel_ns:
-            total_options += len(ns[pn]["values"])
-
+            total_options += len(NON_STONE_PARAMS[jtype][pn]["values"])
         for skey in sel_st:
-            cat = STONE_CATEGORIES.get(skey)
-            if cat: # <-- Allows adding the options even if count is 0
-                for vals in cat["data"].values():
-                    total_options += len(vals)
+            total_options += sum(len(v) for v in STONE_CATEGORIES[skey]["data"].values())
 
         gc1, gc2 = st.columns([1, 2])
         with gc1:
             num = st.number_input(
                 label="Number of images",
-                min_value=1,
-                max_value=100,
-                value=5,
+                min_value=5,
+                max_value=200,
+                value=10,
                 step=1,
             )
         with gc2:
             if total_options < num:
                 st.error(
-                    f"⚠️ Select more parameters. Your current selection gives **{total_options} unique valid options**, "
-                    f"but you are requesting **{num} images**."
+                    f"⚠️ **Not enough options!** You selected parameters containing only **{total_options}** "
+                    f"unique variations, but you're asking to generate **{num}** images. "
+                    f"Please select more checkboxes or decrease the number of images to continue."
                 )
+            elif total_options > 0:
+                st.success(f"✅ {total_options} total options available — ready for {num} images.")
             else:
-                st.success(f"✅ **{total_options} unique options available** — ready to generate {num} images with 0 duplicates.")
+                st.info("Select checkboxes above to see available options.")
 
-        can = total_options >= num and bool(fal_key) and st.session_state.fal_url
+        can = (total_options >= num) and bool(fal_key) and st.session_state.fal_url
 
         if st.button(
             "🚀 Generate Variations",
@@ -1029,7 +1025,6 @@ def main():
             file_name="variations_log.json",
             mime="application/json",
         )
-
 
 if __name__ == "__main__":
     main()
